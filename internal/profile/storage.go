@@ -35,3 +35,24 @@ func createProfilePath(username string) (*string, error) {
 
 	return &profilePath, nil
 }
+
+func CheckUsers() ([]string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	profileDir := homeDir + "/.hillside"
+	files, err := os.ReadDir(profileDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var users []string
+	for _, file := range files {
+		if !file.IsDir() && utils.IsJSONFile(file.Name()) {
+			username := file.Name()[:len(file.Name())-13]
+			users = append(users, username)
+		}
+	}
+	return users, nil
+}
