@@ -8,23 +8,34 @@ type UIConfig struct {
 
 type UI struct {
 	App *tview.Application
-	pages *tview.Pages
-	WelcomeUI *WelcomeUI
+	Pages *tview.Pages
+
+	// Screens
+	LoginScreen *LoginScreen
+	ServersScreen *ServersScreen
+	ChatScreen *ChatScreen
 
 }
 
 func NewUI(cfg *UIConfig) *UI {
-	ui := &UI{
-		App: tview.NewApplication().EnableMouse(true),
-	}
-	ui.WelcomeUI = &WelcomeUI{
-		UI: ui,
-	}
-	ui.WelcomeUI.Init()
-	ui.pages = tview.NewPages().
-		AddPage("welcome", ui.WelcomeUI.layout, true, true)
+	app := tview.NewApplication()
+	pages := tview.NewPages()
 
-	ui.App.SetRoot(ui.pages, true).
-		SetFocus(ui.pages)
+	login := NewLoginScreen()
+	servers := NewServersScreen()
+	chat := NewChatScreen()
+	pages.AddPage("login", login.Layout(), true, true)
+	pages.AddPage("servers", servers.Layout(), true, false)
+	pages.AddPage("chat", chat.Layout(), true, false)
+
+	ui := &UI{
+		App: app,
+		Pages: pages,
+		LoginScreen: login,
+		ServersScreen: servers,
+		ChatScreen: chat,
+	}
+	app.SetRoot(pages, true).
+		SetFocus(login.Form)
 	return ui
 }

@@ -21,10 +21,10 @@ import (
 type Profile struct {
     Username        string `json:"username"`
     PasswordSalt    []byte `json:"password_salt"`
-    PasswordHash    []byte `json:"password_hash"`
-    DilithiumPrivEnc []byte `json:"dilithium_priv_enc"`	// encrypted w/ password key
-    KyberPrivEnc    []byte `json:"kyber_priv_enc"`    // encrypted w/ password key
-	Libp2pPrivEnc   []byte `json:"libp2p_priv_enc"`   // encrypted w/ password key
+    PasswordChecksum    []byte `json:"password_checksum"`
+    DilithiumPrivEnc []byte `json:"dilithium_priv_enc"`	// encrypted w/ password
+    KyberPrivEnc    []byte `json:"kyber_priv_enc"`    // encrypted w/ password
+	Libp2pPrivEnc   []byte `json:"libp2p_priv_enc"`   // encrypted w/ password
     PeerID          string `json:"peer_id"`
 }
 
@@ -100,7 +100,7 @@ func GenerateProfile(username string, pass string) (*Profile, error) {
 	prof := &Profile{
 		Username:        username,
 		PasswordSalt:    salt,
-		PasswordHash:    unlocker,
+		PasswordChecksum:    unlocker,
 		DilithiumPrivEnc: dilEnc,
 		KyberPrivEnc:    kemEnc,
 		Libp2pPrivEnc:   libEnc,
@@ -149,7 +149,7 @@ func LoadProfile(usrname string, pass string, path string) (*models.Keybag, erro
 	}
 	passKey := argon2.IDKey([]byte(pass), prof.PasswordSalt, 1, 64*1024, 4, 32)
 	check := argon2.IDKey([]byte(pass), prof.PasswordSalt, 3, 8*1024, 2, 32)
-	if !hmac.Equal(check, prof.PasswordHash) {
+	if !hmac.Equal(check, prof.PasswordChecksum) {
 		return nil, utils.InvalidPassword
 	}
 

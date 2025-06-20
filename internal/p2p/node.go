@@ -16,6 +16,7 @@ type Node struct {
 	PS *pubsub.PubSub
 	Ctx   context.Context
 	KB *models.Keybag
+	HubAddr string
 }
 
 func (n *Node) InitHost(listenAddrs []string) error{

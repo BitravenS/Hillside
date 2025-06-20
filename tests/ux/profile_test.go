@@ -25,8 +25,8 @@ func TestGenerateProfile(t *testing.T) {
 	if prof.PasswordSalt == nil {
 		t.Error("PasswordSalt is empty")
 	}
-	if prof.PasswordHash == nil {
-		t.Error("PasswordHash is empty")
+	if prof.PasswordChecksum == nil {
+		t.Error("PasswordChecksum is empty")
 	}
 
 	if prof.PeerID == "" {
