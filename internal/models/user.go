@@ -11,11 +11,12 @@ import (
 type User struct {
 	Username        string `json:"username"`
 	DilithiumPub   *dil2.PublicKey `json:"dilithium_pub"`
-	DilithiumPriv *dil2.PrivateKey `json:"dilithium_priv_enc"`
+	//DilithiumPriv *dil2.PrivateKey `json:"dilithium_priv_enc"`
 	KyberPub        *kyber.PublicKey `json:"kyber_pub"`
-	KyberPriv        *kyber.PrivateKey `json:"kyber_priv_enc"`
+	//KyberPriv        *kyber.PrivateKey `json:"kyber_priv_enc"`
 	Libp2pPub       *crypto.PubKey `json:"libp2p_pub"`
-	Libp2pPriv 	*crypto.PrivKey `json:"libp2p_priv_enc"`
+	//Libp2pPriv 	*crypto.PrivKey `json:"libp2p_priv_enc"`
+	PeerID          string `json:"peer_id"`
 }
 
 type Keybag struct {
@@ -23,5 +24,5 @@ type Keybag struct {
 	DilithiumPriv sign.PrivateKey `json:"dilithium_priv"`
 	KyberPriv        kem.PrivateKey `json:"kyber_priv"`
 	Libp2pPriv 	crypto.PrivKey `json:"libp2p_priv"`
-
+	PeerID		  string `json:"peer_id"`
 }

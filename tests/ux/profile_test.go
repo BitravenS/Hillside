@@ -33,7 +33,6 @@ func TestGenerateProfile(t *testing.T) {
 		t.Error("PeerID is empty")
 	}
 
-	// Check if the PeerID can be parsed correctly
 	_, err = peer.Decode(prof.PeerID)
 	if err != nil {
 		t.Fatal(err)
@@ -44,13 +43,11 @@ func TestLoadProfile(t *testing.T) {
 	username := "tst"
 	password := "tstspassword"
 
-	// Generate a profile first
 	prof, err := profile.GenerateProfile(username, password)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Now load the profile
 	loadedProf, err := profile.LoadProfile(username, password, "")
 	if err != nil {
     	t.Fatalf("Failed to load profile: %v\nStack trace: %+v", err, err)
