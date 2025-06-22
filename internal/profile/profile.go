@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"hillside/internal/models"
@@ -129,15 +128,15 @@ func GenerateProfile(username string, pass string) (*Profile, error) {
 	return prof, nil
 }
 
-func LoadProfile(usrname string, pass string, path string) (*models.Keybag, error) {
+func LoadProfile(usrname string, pass string, path string) (*models.Keybag, *models.User, error) {
 	profilePath, err := getProfilePath(usrname, path)
 	if err != nil {
-		return nil, err
+		return nil,nil, err
 	}
 
 	file, err := os.Open(*profilePath)
 	if err != nil {
-		return nil, err
+		return nil,nil, err
 	}
 
 	defer file.Close()
@@ -145,59 +144,65 @@ func LoadProfile(usrname string, pass string, path string) (*models.Keybag, erro
 	var prof Profile
 	dec := json.NewDecoder(file)
 	if err := dec.Decode(&prof); err != nil {
-		return nil, err
+		return nil,nil, err
 	}
 	passKey := argon2.IDKey([]byte(pass), prof.PasswordSalt, 1, 64*1024, 4, 32)
 	check := argon2.IDKey([]byte(pass), prof.PasswordSalt, 3, 8*1024, 2, 32)
 	if !hmac.Equal(check, prof.PasswordChecksum) {
-		return nil, utils.InvalidPassword
+		return nil,nil, utils.InvalidPassword
 	}
 
 	aead, err := chacha.New(passKey)
 	if err != nil {
-		return nil, err
+		return nil,nil, err
 	}
 
     n1 := prof.DilithiumPrivEnc[:aead.NonceSize()]
 	dilPrivBytes, err := aead.Open(nil, n1, prof.DilithiumPrivEnc[aead.NonceSize():], nil)
 	if err != nil {
-		return nil, err
+		return nil,nil, err
 	}
 
     n2 := prof.KyberPrivEnc[:aead.NonceSize()]
 	kemPrivBytes, err := aead.Open(nil, n2, prof.KyberPrivEnc[aead.NonceSize():], nil)
 	if err != nil {
-		return nil, err
+		return nil,nil, err
 	}
 
     n3 := prof.Libp2pPrivEnc[:aead.NonceSize()]
 	libPrivBytes, err := aead.Open(nil, n3, prof.Libp2pPrivEnc[aead.NonceSize():], nil)
 	if err != nil {
-		return nil, err
+		return nil,nil, err
 	}
 	
 	dilPriv, err := dil2.Scheme().UnmarshalBinaryPrivateKey(dilPrivBytes)
 	
 	if err != nil {
-		return nil, err
+		return nil,nil, err
 	}
 
 	kemPriv, err := kyber.Scheme().UnmarshalBinaryPrivateKey(kemPrivBytes)
 	if err != nil {
-		return nil, err
+		return nil,nil, err
 	}
-	fmt.Println("Loaded keys for user:", prof.Username)
 
 	libPriv, err := crypto.UnmarshalPrivateKey(libPrivBytes)
 	if err != nil {
-		return nil, err
+		return nil,nil, err
 	}
 
 	kb := &models.Keybag{
-		Username:        prof.Username,
 		DilithiumPriv: dilPriv,
 		KyberPriv: kemPriv,
 		Libp2pPriv: libPriv,
 	}
-	return kb, nil
+	usr := &models.User{
+		DilithiumPub: dilPriv.Public().(*dil2.PublicKey),
+		KyberPub: kemPriv.Public().(*kyber.PublicKey),
+		Libp2pPub: libPriv.GetPublic(),
+		PeerID: prof.PeerID,
+		Username: prof.Username,
+	}
+
+	return kb, usr, nil
 }

@@ -1,0 +1,107 @@
+package main
+
+import (
+	"os"
+
+	"github.com/rivo/tview"
+)
+
+type UIConfig struct {
+	Theme *Theme
+	loginHandler func(username, password string, hub string)
+	createUserHandler func(username, password string, hub string)
+}
+
+
+type UI struct {
+	App *tview.Application
+	Theme *Theme
+	Pages *tview.Pages
+
+	// Screens
+	LoginScreen *LoginScreen
+	BrowseScreen *BrowseScreen
+
+
+}
+
+func NewUI(cfg *UIConfig) *UI {
+	app := tview.NewApplication().EnableMouse(true)
+
+	tview.Borders.HorizontalFocus = tview.Borders.Horizontal
+	tview.Borders.VerticalFocus = tview.Borders.Vertical
+
+	tview.Borders.TopLeftFocus = '╭'
+	tview.Borders.TopRightFocus = '╮'
+	tview.Borders.BottomLeftFocus = '╰'
+	tview.Borders.BottomRightFocus = '╯'
+
+	tview.Borders.Horizontal = ' '
+	tview.Borders.Vertical = ' '
+
+	tview.Borders.TopLeft = ' '
+	tview.Borders.TopRight = ' '
+	tview.Borders.BottomLeft = ' '
+	tview.Borders.BottomRight = ' '
+
+
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+	DefaultTheme, err := LoadTheme(homeDir+ "/.hillside/default_theme.yaml")
+	if err != nil {
+		panic("Failed to load default theme: " + err.Error())
+	}
+	if cfg.Theme == nil {
+		cfg.Theme = DefaultTheme
+	}
+	ui := &UI{
+		App: app,
+		Theme: cfg.Theme,
+
+	}
+
+	tview.Styles.PrimitiveBackgroundColor = ui.Theme.GetColor("background")
+
+	ui.LoginScreen = &LoginScreen{
+		UI: ui,
+		Hub: "localhost:8080",
+		loginHandler: cfg.loginHandler,
+		createUserHandler: cfg.createUserHandler,}
+	ui.LoginScreen.NewLoginScreen()
+	ui.BrowseScreen = &BrowseScreen{
+		UI: ui,
+		Hub: "localhost:8080",}
+	ui.BrowseScreen.NewBrowseScreen()
+	ui.Pages = tview.NewPages().
+	AddPage("login", ui.LoginScreen.layout, true, true).
+	AddPage("browse", ui.BrowseScreen.layout, true, false)
+
+
+
+	ui.App.SetRoot(ui.Pages, true).
+		SetFocus(ui.LoginScreen.form)
+	return ui
+}
+
+type RoundBorder struct {
+	TopLeft     string
+	TopRight    string
+	BottomLeft  string
+	BottomRight string
+	Horizontal  string
+	Vertical    string
+}
+func NewRoundBorder() *RoundBorder {
+	return &RoundBorder{
+		TopLeft:     "╭",
+		TopRight:    "╮",
+		BottomLeft:  "╰",
+		BottomRight: "╯",
+		Horizontal:  "─",
+		Vertical:    "│",
+	}
+}
+

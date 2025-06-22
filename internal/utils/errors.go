@@ -1,6 +1,9 @@
 package utils
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
     ProfileNotFound = errors.New("profile not found")
@@ -8,3 +11,7 @@ var (
     ServerNotFound = errors.New("server not found")
     DuplicateID = errors.New("duplicate ID detected")
 )
+
+func ThemeError(message string) error {
+    return fmt.Errorf("theme error: %s", message)
+}

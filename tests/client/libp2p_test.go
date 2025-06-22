@@ -17,13 +17,13 @@ func TestClientNodeInitialization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kb, err := profile.LoadProfile(username, password, "")
+	kb,_, err := profile.LoadProfile(username, password, "")
 	if err != nil {
     	t.Fatalf("Failed to load profile: %v\nStack trace: %+v", err, err)
 	}
 	ctx := context.Background()
 	node := &p2p.Node{
-		KB: kb,
+		PK: kb.Libp2pPriv,
 		Ctx: ctx,}
 	err = node.InitHost([]string{"/ip4/0.0.0.0/tcp/0"})
 	if err != nil {

@@ -1,0 +1,58 @@
+name: "Tokyo Night"
+description: "A dark theme inspired by the Tokyo cityscape at night"
+author: "Bitraven"
+version: "1.0.0"
+colors:
+  # Background colors
+  background: "#1a1b26"
+  background-dark: "#16161e"
+  background-light: "#24283b"
+
+  # Foreground colors
+  foreground: "#c0caf5"
+  foreground-dark: "#565f89"
+  foreground-light: "#ffffff"
+
+  # Accent colors
+  blue: "#7aa2f7"
+  cyan: "#7dcfff"
+  green: "#9ece6a"
+  magenta: "#bb9af7"
+  red: "#f7768e"
+  yellow: "#e0af68"
+  orange: "#ff9e64"
+  purple: "#bb9af7"
+
+  # UI specific colors
+  selection: "#414868"
+  border: "#565f89"
+  border-focus: "#7aa2f7"
+  comment: "#565f89"
+
+  # Form elements
+  button-active: "#7aa2f7"
+  button-inactive: "#565f89"
+  button-text: "#1a1b26"
+  input-field: "#24283b"
+  input-border: "#565f89"
+
+  # Modal colors
+  modal-background: "#16161e"
+
+  # Status colors
+  success: "#9ece6a"
+  warning: "#e0af68"
+  error: "#f7768e"
+  info: "#7dcfff"
+
+  # Additional Tokyo Night colors
+  regex-string: "#b4f9f8"
+  language-function: "#2ac3de"
+  object-property: "#7dcfff"
+  function-name: "#7aa2f7"
+  control-keyword: "#bb9af7"
+  variable: "#c0caf5"
+  string: "#9ece6a"
+  number: "#ff9e64"
+  html-attribute: "#bb9af7"
+  css-property: "#7aa2f7"

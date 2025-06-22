@@ -48,7 +48,7 @@ func TestLoadProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	loadedProf, err := profile.LoadProfile(username, password, "")
+	_,loadedProf, err := profile.LoadProfile(username, password, "")
 	if err != nil {
     	t.Fatalf("Failed to load profile: %v\nStack trace: %+v", err, err)
 	}

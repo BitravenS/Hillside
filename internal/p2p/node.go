@@ -1,26 +1,33 @@
 package p2p
 
 import (
+	"bufio"
 	"context"
-	"hillside/internal/models"
+	"encoding/json"
+
+	"hillside/internal/hub"
 
 	libp2p "github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	lib "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
+var protocolID = hub.HubProtocolID
 type Node struct {
 	Host   host.Host
 	DHT    *dht.IpfsDHT
 	PS *pubsub.PubSub
 	Ctx   context.Context
-	KB *models.Keybag
+	PK lib.PrivKey
 	HubAddr string
 }
 
 func (n *Node) InitHost(listenAddrs []string) error{
-	pk := n.KB.Libp2pPriv
+	pk := n.PK
 	host, err := libp2p.New(
 		libp2p.Identity(pk),
 		libp2p.ListenAddrStrings(listenAddrs...),
@@ -53,4 +60,46 @@ func (n *Node) InitPubSub() error {
 	return nil
 }
 
+func (n *Node) InitNode() error {
+	if err := n.InitHost([]string{"/ip4/0.0.0.0/tcp/0"}); err != nil {
+		return err
+	}
+	if err := n.InitDHT(); err != nil {
+		return err
+	}
+	return nil
+}
 
+func (n *Node) SendRPC(method string, params interface{}, out interface{}) error {
+	pi, err := peer.AddrInfoFromString(n.HubAddr)
+	if err != nil {
+		return err
+	}
+	
+    err = n.Host.Connect(n.Ctx, *pi)
+	if err != nil {
+		return err
+	}
+	s, err := n.Host.NewStream(n.Ctx, pi.ID, protocol.ID(protocolID))
+    defer s.Close()
+
+    // envelope
+    env := struct {
+        Method string      `json:"method"`
+        Params interface{} `json:"params"`
+    }{method, params}
+
+    enc := json.NewEncoder(s)
+    err = enc.Encode(env)
+	if err != nil {
+		return err
+	}
+
+    rd := bufio.NewReader(s)
+    dec := json.NewDecoder(rd)
+    err = dec.Decode(out)
+	if err != nil {
+		return err
+	}
+	return nil
+}

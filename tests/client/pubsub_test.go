@@ -19,12 +19,13 @@ func TestPS_Connection(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
-    kbAlice, err := profile.LoadProfile("Alice", "Malice", "")
+    kbAlice,_, err := profile.LoadProfile("Alice", "Malice", "")
     if err != nil {
         t.Fatal(err)
     }
     
-    nodeAlice := &p2p.Node{KB: kbAlice, Ctx: ctx}
+    nodeAlice := &p2p.Node{PK: kbAlice.Libp2pPriv, Ctx: ctx}
+
     err = nodeAlice.InitHost([]string{"/ip4/0.0.0.0/tcp/0"})
     if err != nil {
         t.Fatalf("Failed to initialize Alice host: %v", err)
@@ -72,12 +73,12 @@ func TestPS_Connection(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
-    kbBob, err := profile.LoadProfile("Bob", "Balice", "")
+    kbBob,_, err := profile.LoadProfile("Bob", "Balice", "")
     if err != nil {
         t.Fatal(err)
     }
     
-    nodeBob := &p2p.Node{KB: kbBob, Ctx: ctx}
+    nodeBob := &p2p.Node{PK: kbBob.Libp2pPriv, Ctx: ctx}
     err = nodeBob.InitHost([]string{"/ip4/0.0.0.0/tcp/0"})
     if err != nil {
         t.Fatalf("Failed to initialize Bob host: %v", err)
