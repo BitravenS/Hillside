@@ -214,7 +214,7 @@ func (b *BrowseScreen) showCreateServerForm() {
 			
 			sid, err := b.OnCreateServer(req)
 			if err != nil {
-				b.UI.ShowToast("Create server failed: "+err.Error(), 3*time.Second, nil)
+				b.UI.ShowError("Create server failed",err.Error(),"OK", 0, nil)
 				return
 			}
             if req.Visibility == models.Private {
@@ -263,6 +263,7 @@ func (b *BrowseScreen) showJoinServerForm(){
 	b.joinForm.SetBorder(true)
     b.joinForm.SetBorderColor(b.UI.Theme.GetColor("border"))
 	b.joinForm.SetBorderAttributes(tcell.AttrNone)
+	b.joinForm.SetButtonsAlign(tview.AlignCenter)
 
     b.joinForm.AddPasswordField("Password", "", 0, '*', nil).
         AddButton("Join", func() {
@@ -271,7 +272,7 @@ func (b *BrowseScreen) showJoinServerForm(){
 			
 			err := b.OnJoinServer(b.selectedServer.ID, pass)
 			if err != nil {
-				b.UI.ShowToast("Join server failed: "+err.Error(), 0, nil)
+                b.UI.ShowError("Join server failed",err.Error(),"OK", 0, nil)
 				return
 			}
            
@@ -298,7 +299,7 @@ func (b *BrowseScreen) showJoinServerForm(){
 	}
 
 
-    b.UI.Pages.AddPage("joinServer", mf(b.joinForm,40,10), true, true)
+    b.UI.Pages.AddPage("joinServer", mf(b.joinForm,40,8), true, true)
     b.UI.App.SetFocus(b.joinForm)
 }
 

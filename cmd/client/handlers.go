@@ -137,7 +137,7 @@ func (cli *Client) joinServerHandler(serverID string, pass string) error {
 
 	err := cli.requestJoinServer(serverID, pass)
 	if err != nil {
-		return utils.JoinServerError("Failed to join server: " + err.Error())
+		return utils.JoinServerError(err.Error())
 	}
 	cli.UI.Pages.SwitchToPage("chat")
 	cli.UI.ChatScreen.roomWrapper.SetTitle(fmt.Sprintf("[ %s ]", cli.Session.Server.Name))
@@ -145,13 +145,13 @@ func (cli *Client) joinServerHandler(serverID string, pass string) error {
 	return nil
 }
 
-func (cli *Client) joinRoomHandler(serverID, roomID, pass string) error {
-	if serverID == "" || roomID == "" {
+func (cli *Client) joinRoomHandler(roomID string, pass string) error {
+	if roomID == "" {
 		return utils.JoinRoomError("Server ID and Room ID cannot be empty")
 	}
-	err := cli.requestJoinRoom(serverID, roomID, pass)
+	err := cli.requestJoinRoom(roomID, pass)
 	if err != nil {
-		return utils.JoinRoomError("Failed to join room: " + err.Error())
+		return utils.JoinRoomError(err.Error())
 	}
 	cli.UI.ChatScreen.chatSection.SetTitle(fmt.Sprintf("[ %s ]", cli.Session.Room.Name))
 	go cli.refreshRoomList()

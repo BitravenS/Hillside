@@ -96,15 +96,19 @@ func (cli *Client) requestJoinServer(serverID string, pass string) error {
 	return nil
 }
 
-func (cli *Client) requestJoinRoom(serverID, roomID, pass string) error {
+func (cli *Client) requestJoinRoom(roomID, pass string) error {
 	var resp models.JoinRoomResponse
 	passwordHash := sha256.Sum256([]byte(pass))
-	err := cli.Node.SendRPC("JoinRoom", models.JoinRoomRequest{ServerID: serverID, RoomID: roomID, PasswordHash: passwordHash[:]}, &resp)
+	sid := cli.Session.Server.ID
+	if sid == "" {
+		return fmt.Errorf("no server joined, cannot join room")
+	}
+	err := cli.Node.SendRPC("JoinRoom", models.JoinRoomRequest{ServerID: sid, RoomID: roomID, PasswordHash: passwordHash[:]}, &resp)
 	if err != nil {
 		return err
 	}
 	if resp.Error != "" {
-		return fmt.Errorf("failed to join room: %s", resp.Error)
+		return fmt.Errorf("%s", resp.Error)
 	}
 
 	cli.Session.Room = resp.Room

@@ -17,6 +17,7 @@ type UIConfig struct {
 	getRoomName func() string
 	getServerId func() string
 	createRoomHandler func(req models.CreateRoomRequest) (string, error)
+	joinRoomHandler func(roomID string, pass string) error
 }
 
 
@@ -94,6 +95,7 @@ func NewUI(cfg *UIConfig) *UI {
 		GetRoomName: cfg.getRoomName,
 		GetServerId: cfg.getServerId,
 		OnCreateRoom: cfg.createRoomHandler,
+		OnJoinRoom: cfg.joinRoomHandler,
 	}
 	ui.ChatScreen.NewChatScreen()
 

@@ -25,12 +25,14 @@ type ChatScreen struct {
     modalForm *tview.Form
 	rooms 	   []models.RoomMeta
 	noRoomView    *tview.TextView
-    joinRoom func (roomID string) error
+    OnJoinRoom func (roomID string, pass string) error
     sendMessage func (message string) error
     OnCreateRoom func (req models.CreateRoomRequest) (string, error)
     msgField *tview.Flex
     msgInput *tview.TextArea
     sendButton *tview.Button
+    joinForm *tview.Form
+    selectedRoom models.RoomMeta
 }
 
 
@@ -154,8 +156,16 @@ func (c *ChatScreen) UpdateRoomList(rooms []models.RoomMeta) {
         // store index i in the List for selection
         c.roomList.AddItem(line, "", 0, func(idx int) func() {
             return func() {
-                rm := c.rooms[idx]
-                c.joinRoom(rm.ID)
+                c.selectedRoom = rm
+                if c.selectedRoom.Visibility == models.Public {
+                    err := c.OnJoinRoom(c.selectedRoom.ID, "")
+                    if err != nil {
+                        c.UI.ShowError("Join room failed",err.Error(),"OK", 0, nil)
+                        return
+                    }
+                } else {
+                    c.joinRoomForm()
+                } 
             }
         }(i))
     }
@@ -230,7 +240,7 @@ func (c *ChatScreen) showCreateRoomForm() {
 			
 			sid, err := c.OnCreateRoom(req)
 			if err != nil {
-				c.UI.ShowToast("Create room failed: "+err.Error(), 0, nil)
+				c.UI.ShowError("Create room failed",err.Error(), "OK",0, nil)
 				return
 			}
             if req.Visibility == models.Private {
@@ -264,4 +274,59 @@ func (c *ChatScreen) showCreateRoomForm() {
 
     c.UI.Pages.AddPage("createRoom", mf(c.modalForm,40,12), true, true)
     c.UI.App.SetFocus(c.modalForm)
+}
+
+
+
+func (c *ChatScreen) joinRoomForm(){
+    c.joinForm = tview.NewForm()
+
+    bgColor, fieldBg, buttonBg, buttonText, fieldText := c.UI.Theme.FormColors()
+    c.joinForm.SetBackgroundColor(bgColor)
+    c.joinForm.SetButtonBackgroundColor(buttonBg)
+    c.joinForm.SetButtonTextColor(buttonText)
+    c.joinForm.SetFieldBackgroundColor(fieldBg)
+    c.joinForm.SetFieldTextColor(fieldText)
+    c.joinForm.SetLabelColor(c.UI.Theme.GetColor("primary"))
+	c.joinForm.SetBorder(true)
+    c.joinForm.SetBorderColor(c.UI.Theme.GetColor("border"))
+	c.joinForm.SetBorderAttributes(tcell.AttrNone)
+    c.joinForm.SetButtonsAlign(tview.AlignCenter)
+
+    c.joinForm.AddPasswordField("Password", "", 0, '*', nil).
+        AddButton("Join", func() {
+            pass := c.joinForm.GetFormItemByLabel("Password").(*tview.InputField).GetText()
+			
+			
+			err := c.OnJoinRoom(c.selectedRoom.ID, pass)
+			if err != nil {
+				c.UI.ShowError("Join room failed", err.Error(),"OK", 0, nil)
+				return
+			}
+           
+            c.UI.Pages.RemovePage("joinRoom")
+        }).
+        AddButton("Cancel", func() {
+            c.UI.Pages.RemovePage("joinRoom")
+        })
+
+
+    c.joinForm.SetBorder(true).
+        SetTitle(fmt.Sprintf("[ Join %s ]", c.selectedRoom.Name)).
+        SetTitleAlign(tview.AlignCenter).
+        SetTitleColor(c.UI.Theme.GetColor("primary"))
+
+	mf := func(p tview.Primitive, width, height int) tview.Primitive {
+		return tview.NewFlex().
+			AddItem(nil, 0, 1, false).
+			AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+				AddItem(nil, 0, 1, false).
+				AddItem(p, height, 1, true).
+				AddItem(nil, 0, 1, false), width, 1, true).
+			AddItem(nil, 0, 1, false)
+	}
+
+
+    c.UI.Pages.AddPage("joinRoom", mf(c.joinForm,40,8), true, true)
+    c.UI.App.SetFocus(c.joinForm)
 }

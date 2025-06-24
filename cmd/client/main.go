@@ -39,6 +39,7 @@ func main() {
 		getRoomName: client.getRoomName,
 		getServerId: client.getServerId,
 		createRoomHandler: client.createRoomHandler,
+		joinRoomHandler: client.joinRoomHandler,
 
 	})
 	node := &p2p.Node{
