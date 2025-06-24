@@ -1,1 +1,1 @@
-package hub
+package main

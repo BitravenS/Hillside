@@ -1,7 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"hillside/internal/models"
 	"hillside/internal/profile"
+	"hillside/internal/utils"
 	"time"
 )
 type loginSession struct {
@@ -13,12 +17,12 @@ type loginSession struct {
 func (cli *Client) loginHandler(username string, password string, hub string) {
 
 	if username == "" || password == "" {
-		cli.UI.ShowToast("Username and password cannot be empty", 0, nil)
+		cli.UI.ShowError("Error", "Username and password cannot be empty","OK", 0, nil)
 		return
 	}
 	kb,usr, err := profile.LoadProfile(username, password, "")
 	if err != nil {
-			cli.UI.ShowToast("Login failed: "+err.Error(),0, nil)
+			cli.UI.ShowError("Login failed", err.Error(), "Retry", 0, nil)
 		return
 	}
 	cli.UI.ShowToast("Login successful", 3*time.Second,nil)
@@ -27,7 +31,7 @@ func (cli *Client) loginHandler(username string, password string, hub string) {
 	cli.Node.PK = kb.Libp2pPriv
 	err = cli.Node.InitNode()
 	if err != nil {
-		cli.UI.ShowToast("Node initialization failed: "+err.Error(), 0, nil)
+		cli.UI.ShowError("Node initialization failed", err.Error(),"OK", 0, nil)
 		return
 	}
 	
@@ -41,18 +45,18 @@ func (cli *Client) loginHandler(username string, password string, hub string) {
 func (cli *Client) createUserHandler(username string, password string, hub string) {
 
 	if username == "" || password == "" {
-		cli.UI.ShowToast("Username and password cannot be empty", 0, nil)
+		cli.UI.ShowError("Error", "Username and password cannot be empty","OK", 0, nil)
 		return
 	}
 	prof, err := profile.GenerateProfile(username, password)
 	if err != nil {
-		cli.UI.ShowToast("Create user failed: "+err.Error(),0, nil)
+		cli.UI.ShowError("Create user failed", err.Error(), "OK", 0, nil)
 		return
 	}
 	cli.UI.ShowToast("User created successfully! Welcome "+ prof.Username, 3*time.Second,nil)
 	kb,usr, err := profile.LoadProfile(username, password, "")
 	if err != nil {
-			cli.UI.ShowToast("Login failed: "+err.Error(),0, nil)
+			cli.UI.ShowError("Login failed", err.Error(), "Retry", 0, nil)
 		return
 	}
 	cli.User = usr
@@ -60,7 +64,7 @@ func (cli *Client) createUserHandler(username string, password string, hub strin
 	cli.Node.PK = kb.Libp2pPriv
 	err = cli.Node.InitNode()
 	if err != nil {
-		cli.UI.ShowToast("Node initialization failed: "+err.Error(), 0, nil)
+		cli.UI.ShowError("Node initialization failed", err.Error(),"OK", 0, nil)
 		return
 	}
 	cli.SwitchToBrowseScreen(hub)
@@ -70,10 +74,33 @@ func (cli *Client) createUserHandler(username string, password string, hub strin
 }
 
 func (cli *Client) SwitchToBrowseScreen(hub string) {
-	cli.UI.Pages.SwitchToPage("Browse")
+	cli.UI.Pages.SwitchToPage("browse")
 
 	cli.Node.HubAddr = hub
+	cli.UI.BrowseScreen.SetHub(hub)
 
 	go cli.refreshServerList()
 }
 
+func (cli *Client) createServerHandler(request models.CreateServerRequest) (serverID string, err error) {
+	if request.Name == "" {
+		return "", utils.CreateServerError("Server name cannot be empty")
+	}
+	if request.Visibility == models.ServerPrivate && len(request.PasswordHash) == 0 {
+		return "" , utils.CreateServerError("Private servers must have a password")
+	}
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", utils.CreateServerError("Failed to generate salt: " + err.Error())
+	}
+	request.PasswordSalt = salt
+	hash := sha256.Sum256(request.PasswordHash)
+	request.PasswordHash = hash[:]
+	resp, err := cli.requestCreateServer(request)
+	if err != nil {
+		return "", utils.CreateServerError("Failed to create server: " + err.Error())
+	}
+	serverID = resp.ServerID
+	go cli.refreshServerList()
+	return serverID, nil
+}

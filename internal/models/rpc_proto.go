@@ -12,6 +12,7 @@ type CreateServerRequest struct {
 	Description string `json:"description"`
 	PasswordHash []byte `json:"password_hash,omitempty"`
 	PasswordSalt []byte `json:"password_salt,omitempty"`
+	Creator User `json:"creator"`
 }
 type CreateServerResponse struct {
 	ServerID string `json:"server_id"`

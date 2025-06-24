@@ -15,3 +15,7 @@ var (
 func ThemeError(message string) error {
     return fmt.Errorf("theme error: %s", message)
 }
+
+func CreateServerError(message string) error {
+    return fmt.Errorf("create server error: %s", message)
+}

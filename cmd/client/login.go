@@ -57,7 +57,7 @@ func (l *LoginScreen) NewLoginScreen() {
 	}
 
 	headerStyle := tcell.StyleDefault.
-		Foreground(l.Theme.GetColor("orange")).
+		Foreground(l.Theme.GetColor("accent")).
 		Background(l.Theme.GetColor("background"))
 
     asciiTextView := tview.NewTextView().
@@ -81,7 +81,7 @@ func (l *LoginScreen) NewLoginScreen() {
     l.form.SetButtonTextColor(buttonText)
     l.form.SetFieldBackgroundColor(fieldBg)
     l.form.SetFieldTextColor(fieldText)
-    l.form.SetLabelColor(l.Theme.GetColor("purple"))
+    l.form.SetLabelColor(l.Theme.GetColor("primary"))
 	l.form.SetBorder(true)
     l.form.SetBorderColor(l.Theme.GetColor("border"))
 	l.form.SetBorderAttributes(tcell.AttrNone)

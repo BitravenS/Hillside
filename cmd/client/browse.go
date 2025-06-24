@@ -1,111 +1,252 @@
 package main
 
 import (
+	"fmt"
 	"hillside/internal/models"
-	"strconv"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
 
 
 type BrowseScreen struct {
-	*UI
-	layout        *tview.Flex
-	servers []models.ServerMeta
-	Hub		  string
+    *UI
+    layout     *tview.Flex
+    serverList *tview.List  
+    serverPane *tview.Flex      
+    infoView   *tview.TextView
+    OnCreateServer func(request models.CreateServerRequest) (sid string, err error)
+    servers    []models.ServerMeta
+    modalForm  *tview.Form
+	createBtn  *tview.Button
+    noServersView *tview.TextView
+    Hub        string
+    title     *tview.TextView
 }
 
 func (b *BrowseScreen) NewBrowseScreen() {
-	b.layout = tview.NewFlex()
-	b.layout.SetDirection(tview.FlexColumn).
-		SetBorder(false)
+    // left pane
+    b.serverList = tview.NewList()
 
-	b.layout.SetBackgroundColor(b.Theme.GetColor("background"))
-	b.layout.SetFullScreen(true)
-	servers := tview.NewFlex().SetDirection(tview.FlexRow)
-	serverLabels := tview.NewFlex().
-		SetDirection(tview.FlexColumn).
-		AddItem(tview.NewTextView().SetText("Name"), 0,2, false).
-		AddItem(tview.NewTextView().SetText("Description"), 0,3, false).
-		AddItem(tview.NewTextView().SetText("Password"), 0,1, false).
-		AddItem(tview.NewTextView().SetText("Online"), 0,1, false)
 
-	servers.AddItem(serverLabels, 1, 0, false)
+    
+    b.serverList.SetSelectedBackgroundColor(b.UI.Theme.GetColor("background-light"))
+    b.serverList.SetSelectedTextColor(b.UI.Theme.GetColor("primary")).
+        SetHighlightFullLine(true)
 
-	serverList := tview.NewList().
-		SetBorder(true).
-		SetBorderColor(b.Theme.GetColor("border")).
-		SetTitle("Servers").
-		SetTitleColor(b.Theme.GetColor("foreground")).
-		SetBackgroundColor(b.Theme.GetColor("background"))
+	b.serverList.
+        SetTitleColor(b.Theme.GetColor("primary")).
+        SetBackgroundColor(b.Theme.GetColor("background"))
 
-	servers.AddItem(serverList, 0, 1, false)
+    // info pane
+    b.infoView = tview.NewTextView()
+	b.infoView.
+        SetText("Select a server to view details.").
+        SetTextAlign(tview.AlignLeft).
+        SetBackgroundColor(b.Theme.GetColor("background"))
 
-	serverInfo := tview.NewTextView().
-		SetText("Select a server to view details.").
-		SetTextAlign(tview.AlignLeft)
-	b.layout.AddItem(servers, 0, 2, true)
-	b.layout.AddItem(serverInfo, 0, 1, false)
-	
+    b.infoView.SetDynamicColors(true)
+
+    b.infoView.SetBorder(true).
+        SetTitle("[ Server Info ]").
+        SetTitleColor(b.Theme.GetColor("primary")).
+        SetBorderColor(b.Theme.GetColor("border")).
+        SetBorderPadding(2,2,2,2)
+
+    // layout
+    b.serverPane = tview.NewFlex()
+    b.serverPane.AddItem(b.serverList, 0, 1, true)
+
+    b.serverPane.SetDirection(tview.FlexRow)
+    b.serverPane.SetBorder(true).
+        SetTitle("[ Servers ]").
+        SetTitleColor(b.Theme.GetColor("primary")).
+        SetBorderColor(b.Theme.GetColor("border")).
+        SetBackgroundColor(b.Theme.GetColor("background")).
+        SetBorderPadding(2,2,2,2)
+
+
+    header := tview.NewFlex().
+        SetDirection(tview.FlexColumn)
+
+    b.createBtn = tview.NewButton("Create Server")
+    b.createBtn.SetSelectedFunc(b.showCreateServerForm).
+        SetLabelColor(b.Theme.GetColor("button-text")).
+        SetBackgroundColor(b.Theme.GetColor("button-active"))
+
+    b.title = tview.NewTextView().SetDynamicColors(true)
+    b.title.SetText(fmt.Sprintf("[yellow]Hub:[white] %s", b.Hub)).
+        SetTextAlign(tview.AlignLeft)
+    
+    header.AddItem(b.title, 0, 2, false).
+        AddItem(b.createBtn, 15, 0, false)
+    
+    serverView := tview.NewFlex().SetDirection(tview.FlexColumn).
+        AddItem(b.serverPane, 0, 2, true).
+        AddItem(b.infoView, 0, 1, false)
+
+    b.layout = tview.NewFlex().SetDirection(tview.FlexRow).
+        AddItem(header, 1, 0, false).
+        AddItem(nil, 1, 0, false). 
+        AddItem(serverView, 0, 1, true)
 }
 
 func formatBoolPasswordProtected(passwordProtected models.ServerVisibility) string {
 	if passwordProtected == models.ServerPasswordProtected {
 		return "🔒"
 	}
-	return "	"
+	return "🔓"
 }
-
 func (b *BrowseScreen) UpdateServerList(servers []models.ServerMeta) {
-	b.servers = servers
-	serverList := tview.NewFlex()
-	serverList.SetDirection(tview.FlexRow)
+    b.servers = servers
+    b.serverList.Clear()
+    if len(servers) == 0  {
+        if b.noServersView == nil {
+            b.noServersView = tview.NewTextView().
+                SetTextAlign(tview.AlignCenter).
+                SetTextColor(b.Theme.GetColor("foreground")).
+                SetText("No servers available. Create a new server to get started.")
+            b.serverPane.AddItem(b.noServersView, 0, 1, false)
+            b.infoView.SetText("No servers available. Create a new server to get started.")
+        }
+    } else {
+        b.serverPane.RemoveItem(b.noServersView)
 
-	for _, server := range b.servers {
-		serverEntry := tview.NewFlex().
-			SetDirection(tview.FlexColumn)
-		serverEntry.AddItem(tview.NewTextView().SetText(server.Name), 0, 2, false).
-			AddItem(tview.NewTextView().SetText(server.Description), 0, 3, false).
-			AddItem(tview.NewTextView().SetText(formatBoolPasswordProtected(server.Visibility)), 0, 1, false).
-			AddItem(tview.NewTextView().SetText(strconv.Itoa(int(server.Online))), 0, 1, false)
-
-		serverList.AddItem(serverEntry, 1, 0, false)
-	}
-	serverList.
-		SetBorder(true).
-		SetBorderColor(b.Theme.GetColor("border")).
-		SetTitle("Servers").
-		SetTitleColor(b.Theme.GetColor("foreground")).
-		SetBackgroundColor(b.Theme.GetColor("background"))
-
-	b.layout.AddItem(serverList, 0, 1, false)
-	b.layout.AddItem(tview.NewTextView().SetText("Select a server to view details."), 0, 1, false)
-
+    for i, srv := range servers {
+        // The main text shows name, description, lock icon, online count
+        line := fmt.Sprintf(
+            "%-20s | %-30s | %s | %3d Online",
+            srv.Name,
+            srv.Description,
+            formatBoolPasswordProtected(srv.Visibility),
+            srv.Online,
+        )
+        // store index i in the List for selection
+        b.serverList.AddItem(line, "", 0, func(idx int) func() {
+            return func() {
+                // on select handler
+                srv := b.servers[idx]
+                b.infoView.SetText(
+                    fmt.Sprintf("[yellow]Server:[white] %s\n[yellow]Description:[white] %s\n[yellow]Online:[white] %d\n",
+                        srv.Name, srv.Description, srv.Online,
+                    ))
+            }
+        }(i))
+    }
+}
 }
 
+func (b *BrowseScreen) SetHub(hub string) {
+    b.Hub = hub
+    b.title.SetText(fmt.Sprintf("[yellow]Hub:[white] %s", b.Hub))
+}
 
+func (b *BrowseScreen) showCreateServerForm() {
+    // 1) Build the form
+    b.modalForm = tview.NewForm()
 
+    bgColor, fieldBg, buttonBg, buttonText, fieldText := b.UI.Theme.FormColors()
+    b.modalForm.SetBackgroundColor(bgColor)
+    b.modalForm.SetButtonBackgroundColor(buttonBg)
+    b.modalForm.SetButtonTextColor(buttonText)
+    b.modalForm.SetFieldBackgroundColor(fieldBg)
+    b.modalForm.SetFieldTextColor(fieldText)
+    b.modalForm.SetLabelColor(b.UI.Theme.GetColor("primary"))
+	b.modalForm.SetBorder(true)
+    b.modalForm.SetBorderColor(b.UI.Theme.GetColor("border"))
+	b.modalForm.SetBorderAttributes(tcell.AttrNone)
 
-func (cli *Client) refreshServerList(){
-	refresh := func() {
-		serverResp, err := cli.requetServers()
-		serverList := serverResp.Servers
-		cli.UI.App.QueueUpdate(func() {
+    visibilityDropdown := tview.NewDropDown().
+        SetLabel("Visibility").
+        SetOptions([]string{"Public", "Password Protected", "Private"}, nil)
+    
+    visibilityDropdown.SetBackgroundColor(b.UI.Theme.GetColor("background"))
+    visibilityDropdown.SetFieldBackgroundColor(fieldBg)
+    visibilityDropdown.SetFieldTextColor(fieldText)
+    visibilityDropdown.SetPrefixTextColor(b.UI.Theme.GetColor("background-light"))
+    visibilityDropdown.SetLabelColor(b.UI.Theme.GetColor("primary"))
+    visibilityDropdown.SetListStyles(
+        tcell.StyleDefault.
+		Foreground(fieldText).
+		Background(b.UI.Theme.GetColor("background")),
+        tcell.StyleDefault.
+		Foreground(fieldText).
+		Background(b.UI.Theme.GetColor("background-light")),
+    )
+    visibilityDropdown.SetFocusedStyle(tcell.StyleDefault.
+		Foreground(fieldText).
+		Background(b.UI.Theme.GetColor("background")))
+
+    b.modalForm.AddInputField("Name", "", 0, nil, nil).
+		AddInputField("Description", "", 0, nil, nil).
+        AddPasswordField("Password (opt)", "", 0, '*', nil).
+		AddFormItem(visibilityDropdown).
+        AddButton("Save", func() {
+            name := b.modalForm.GetFormItemByLabel("Name").(*tview.InputField).GetText()
+			description := b.modalForm.GetFormItemByLabel("Description").(*tview.InputField).GetText()
+            pass := b.modalForm.GetFormItemByLabel("Password (opt)").(*tview.InputField).GetText()
+			visibilityIndex, _ := b.modalForm.GetFormItemByLabel("Visibility").(*tview.DropDown).GetCurrentOption()
+			visibility := models.ServerVisibility(visibilityIndex)
+			req := models.CreateServerRequest{
+				Name:        name,
+				Description: description,
+				Visibility:  visibility,
+				PasswordHash: []byte(pass),
+			}
+			
+			sid, err := b.OnCreateServer(req)
 			if err != nil {
-				cli.UI.ShowToast(err.Error(), 0,nil)
-				cli.UI.App.Draw()
+				b.UI.ShowToast("Create server failed: "+err.Error(), 3*time.Second, nil)
 				return
 			}
-			cli.UI.BrowseScreen.UpdateServerList(serverList)
-			cli.UI.App.Draw()
-		})
+            if req.Visibility == models.ServerPrivate {
+                b.UI.ShowToast(fmt.Sprintf("Server created successfully! ID: %s\nThis ServerID will be the only way to access the server. It's been saved under ~/.hillside, encrypted with the server password. DON'T LOSE IT",sid), 0, nil)
+                saveEncryptedSID(sid, pass)
+            } else {
+			    b.UI.ShowToast("Server created successfully! ID: "+sid, 3*time.Second, nil)
+            }
+            b.UI.Pages.RemovePage("createServer")
+        }).
+        AddButton("Cancel", func() {
+            b.UI.Pages.RemovePage("createServer")
+        })
+
+
+    b.modalForm.SetBorder(true).
+        SetTitle("[ Create Server ]").
+        SetTitleAlign(tview.AlignCenter).
+        SetTitleColor(b.UI.Theme.GetColor("primary"))
+
+	mf := func(p tview.Primitive, width, height int) tview.Primitive {
+		return tview.NewFlex().
+			AddItem(nil, 0, 1, false).
+			AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+				AddItem(nil, 0, 1, false).
+				AddItem(p, height, 1, true).
+				AddItem(nil, 0, 1, false), width, 1, true).
+			AddItem(nil, 0, 1, false)
 	}
 
-	refresh()
-	// Update the chat rooms on every timer fire
-	for range 2* time.Second {
-		refresh()
-	}
+
+    b.UI.Pages.AddPage("createServer", mf(b.modalForm,40,15), true, true)
+    b.UI.App.SetFocus(b.modalForm)
+}
+
+
+func (cli *Client) refreshServerList() {
+    serverResp, err := cli.requestServers()
+    cli.UI.App.QueueUpdateDraw(func() {
+        if err != nil {
+            cli.UI.ShowError("Server Error",err.Error(),"Go back to Login", 0, func() {
+                cli.UI.Pages.SwitchToPage("login")
+            })
+            return
+        } else {
+            cli.UI.BrowseScreen.UpdateServerList(serverResp.Servers)
+        }
+    })
+
+    
 }

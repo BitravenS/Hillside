@@ -19,7 +19,7 @@ func main() {
 	client := &Client{}
 	ctx := context.Background()
 
-	theme, err := LoadThemeFromDir("~/.hillside/themes/","default_theme")
+	theme, err := LoadThemeFromDir("/home/bitraven/.hillside/","default_theme")
 	if err != nil {
 		panic("Failed to load default theme: " + err.Error())
 	}
@@ -27,6 +27,7 @@ func main() {
 		Theme: theme,
 		loginHandler: client.loginHandler,
 		createUserHandler: client.createUserHandler,
+		createServerHandler: client.createServerHandler,
 	})
 	node := &p2p.Node{
 		Ctx: ctx,

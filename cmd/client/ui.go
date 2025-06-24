@@ -1,6 +1,7 @@
 package main
 
 import (
+	"hillside/internal/models"
 	"os"
 
 	"github.com/rivo/tview"
@@ -10,6 +11,7 @@ type UIConfig struct {
 	Theme *Theme
 	loginHandler func(username, password string, hub string)
 	createUserHandler func(username, password string, hub string)
+	createServerHandler func(request models.CreateServerRequest) (sid string, err error)
 }
 
 
@@ -73,7 +75,8 @@ func NewUI(cfg *UIConfig) *UI {
 	ui.LoginScreen.NewLoginScreen()
 	ui.BrowseScreen = &BrowseScreen{
 		UI: ui,
-		Hub: "localhost:8080",}
+		Hub: "localhost:8080",
+		OnCreateServer: cfg.createServerHandler,}
 	ui.BrowseScreen.NewBrowseScreen()
 	ui.Pages = tview.NewPages().
 	AddPage("login", ui.LoginScreen.layout, true, true).
