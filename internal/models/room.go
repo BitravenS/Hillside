@@ -1,16 +1,16 @@
 package models
 
 
-type RoomVisibility int
+type Visibility int
 const (
-	RoomPublic RoomVisibility = iota
-	RoomPasswordProtected
-	RoomPrivate
+	Public Visibility = iota
+	PasswordProtected
+	Private
 )
 type RoomMeta struct {
 	ID string `json:"room_id"`
 	Name string `json:"name"`
-	Visibility RoomVisibility `json:"visibility"`
+	Visibility Visibility `json:"visibility"`
 	PasswordHash []byte `json:"password_hash,omitempty"`
 	PasswordSalt []byte `json:"password_salt,omitempty"`
 	EncRoomKey []byte `json:"enc_room_key,omitempty"`

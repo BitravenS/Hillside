@@ -12,7 +12,13 @@ type UIConfig struct {
 	loginHandler func(username, password string, hub string)
 	createUserHandler func(username, password string, hub string)
 	createServerHandler func(request models.CreateServerRequest) (sid string, err error)
+	joinServerHandler func(serverID string, pass string) error
+	getServerName func() string
+	getRoomName func() string
+	getServerId func() string
+	createRoomHandler func(req models.CreateRoomRequest) (string, error)
 }
+
 
 
 type UI struct {
@@ -23,13 +29,13 @@ type UI struct {
 	// Screens
 	LoginScreen *LoginScreen
 	BrowseScreen *BrowseScreen
+	ChatScreen *ChatScreen
 
 
 }
 
 func NewUI(cfg *UIConfig) *UI {
 	app := tview.NewApplication().EnableMouse(true)
-
 	tview.Borders.HorizontalFocus = tview.Borders.Horizontal
 	tview.Borders.VerticalFocus = tview.Borders.Vertical
 
@@ -66,6 +72,7 @@ func NewUI(cfg *UIConfig) *UI {
 	}
 
 	tview.Styles.PrimitiveBackgroundColor = ui.Theme.GetColor("background")
+	tview.Styles.TitleColor = ui.Theme.GetColor("primary")
 
 	ui.LoginScreen = &LoginScreen{
 		UI: ui,
@@ -76,35 +83,29 @@ func NewUI(cfg *UIConfig) *UI {
 	ui.BrowseScreen = &BrowseScreen{
 		UI: ui,
 		Hub: "localhost:8080",
-		OnCreateServer: cfg.createServerHandler,}
+		OnCreateServer: cfg.createServerHandler,
+		OnJoinServer: cfg.joinServerHandler,
+	}
 	ui.BrowseScreen.NewBrowseScreen()
+
+	ui.ChatScreen = &ChatScreen{
+		UI: ui,
+		GetServerName: cfg.getServerName,
+		GetRoomName: cfg.getRoomName,
+		GetServerId: cfg.getServerId,
+		OnCreateRoom: cfg.createRoomHandler,
+	}
+	ui.ChatScreen.NewChatScreen()
+
 	ui.Pages = tview.NewPages().
 	AddPage("login", ui.LoginScreen.layout, true, true).
-	AddPage("browse", ui.BrowseScreen.layout, true, false)
+	AddPage("browse", ui.BrowseScreen.layout, true, false).
+	AddPage("chat", ui.ChatScreen.layout, true, false)
 
 
 
 	ui.App.SetRoot(ui.Pages, true).
 		SetFocus(ui.LoginScreen.form)
 	return ui
-}
-
-type RoundBorder struct {
-	TopLeft     string
-	TopRight    string
-	BottomLeft  string
-	BottomRight string
-	Horizontal  string
-	Vertical    string
-}
-func NewRoundBorder() *RoundBorder {
-	return &RoundBorder{
-		TopLeft:     "╭",
-		TopRight:    "╮",
-		BottomLeft:  "╰",
-		BottomRight: "╯",
-		Horizontal:  "─",
-		Vertical:    "│",
-	}
 }
 

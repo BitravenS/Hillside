@@ -96,3 +96,41 @@ func (hs *HubStore) CreateRoom(serverID string, room *models.RoomMeta) error {
 		serverID, len(server.Rooms))
 	return nil
 }
+
+func (hs *HubStore) GetServer(serverID string) (*models.ServerMeta, error) {
+	hs.mu.RLock()
+	defer hs.mu.RUnlock()
+
+	log.Printf("[STORE] GetServer called for server ID: %s", serverID)
+
+	server, exists := hs.servers[serverID]
+	if !exists {
+		log.Printf("[STORE] GetServer failed - Server %s not found", serverID)
+		return nil, utils.ServerNotFound
+	}
+
+	log.Printf("[STORE] GetServer returning server ID: %s, Name: '%s'", server.ID, server.Name)
+	return server, nil
+}
+
+func (hs *HubStore) GetRoom(serverID, roomID string) (*models.RoomMeta, error) {
+	hs.mu.RLock()
+	defer hs.mu.RUnlock()
+
+	log.Printf("[STORE] GetRoom called for server ID: %s, room ID: %s", serverID, roomID)
+
+	server, exists := hs.servers[serverID]
+	if !exists {
+		log.Printf("[STORE] GetRoom failed - Server %s not found", serverID)
+		return nil, utils.ServerNotFound
+	}
+
+	room, exists := server.Rooms[roomID]
+	if !exists {
+		log.Printf("[STORE] GetRoom failed - Room %s not found in server %s", roomID, serverID)
+		return nil, utils.RoomNotFound
+	}
+
+	log.Printf("[STORE] GetRoom returning room ID: %s, Name: '%s'", room.ID, room.Name)
+	return room, nil
+}

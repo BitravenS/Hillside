@@ -6,11 +6,17 @@ import (
 	"hillside/internal/p2p"
 )
 
+type Session struct {
+	Server *models.ServerMeta
+	Room *models.RoomMeta
+	Password string
+}
 type Client struct {
 	User *models.User
 	Keybag *models.Keybag
 	Node *p2p.Node
 	UI *UI
+	Session *Session
 }
 
 
@@ -28,12 +34,22 @@ func main() {
 		loginHandler: client.loginHandler,
 		createUserHandler: client.createUserHandler,
 		createServerHandler: client.createServerHandler,
+		joinServerHandler: client.joinServerHandler,
+		getServerName: client.getServerName,
+		getRoomName: client.getRoomName,
+		getServerId: client.getServerId,
+		createRoomHandler: client.createRoomHandler,
+
 	})
 	node := &p2p.Node{
 		Ctx: ctx,
 	}
 	client.Node = node
-	
+	client.Session = &Session{
+		Server: nil,
+		Room: nil,
+		Password: "",
+	}
 	if err := client.UI.App.Run(); err != nil {
 		panic(err)
 	}

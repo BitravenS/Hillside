@@ -8,7 +8,7 @@ type ListServersResponse struct {
 // CreateServer
 type CreateServerRequest struct {
 	Name       string           `json:"name"`
-	Visibility ServerVisibility `json:"visibility"`
+	Visibility Visibility `json:"visibility"`
 	Description string `json:"description"`
 	PasswordHash []byte `json:"password_hash,omitempty"`
 	PasswordSalt []byte `json:"password_salt,omitempty"`
@@ -31,11 +31,33 @@ type ListRoomsResponse struct {
 type CreateRoomRequest struct {
 	ServerID          string           `json:"server_id"`
 	RoomName          string           `json:"room_name"`
-	Visibility        RoomVisibility   `json:"visibility"`
+	Visibility        Visibility   `json:"visibility"`
 	PasswordHash []byte `json:"password_hash,omitempty"`
 	PasswordSalt []byte `json:"password_salt,omitempty"`
 	EncRoomKey []byte `json:"enc_room_key,omitempty"`
 }
 type CreateRoomResponse struct{
+	RoomID string `json:"room_id"`
 	Error string `json:"error,omitempty"`
+}
+
+type JoinServerRequest struct {
+    ServerID     string `json:"server_id"`
+    PasswordHash []byte `json:"password_hash,omitempty"`
+}
+
+type JoinServerResponse struct {
+    Server *ServerMeta `json:"server,omitempty"`
+    Error  string      `json:"error,omitempty"`
+}
+
+type JoinRoomRequest struct {
+    ServerID     string `json:"server_id"`
+    RoomID       string `json:"room_id"`
+    PasswordHash []byte `json:"password_hash,omitempty"`
+}
+
+type JoinRoomResponse struct {
+    Room  *RoomMeta `json:"room,omitempty"`
+    Error string    `json:"error,omitempty"`
 }

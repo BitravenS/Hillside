@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -132,8 +133,11 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 		}
 		out := make([]models.ServerMeta, 0)
 		for _, server := range servers {
-			if server.Visibility != models.ServerPrivate {
-				out = append(out, server)
+			if server.Visibility != models.Private {
+				sanitized := server
+				sanitized.PasswordSalt = nil
+				sanitized.PasswordHash = nil
+				out = append(out, sanitized)
 			}
 		}
 		log.Printf("[HUB] RPC: ListServers returning %d public servers to %s",
@@ -204,8 +208,12 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 		}
 		out := make([]models.RoomMeta, 0)
 		for _, room := range rooms {
-			if room.Visibility != models.RoomPrivate {
-				out = append(out, room)
+			if room.Visibility != models.Private {
+				sanitized := room
+				sanitized.PasswordSalt = nil
+				sanitized.PasswordHash = nil
+
+				out = append(out, sanitized)
 			}
 		}
 
@@ -250,9 +258,73 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 			log.Printf("[HUB] RPC: Room ID collision, retrying with new ID")
 		}
 
-		if err := encoder.Encode(models.CreateRoomResponse{}); err != nil {
+		if err := encoder.Encode(models.CreateRoomResponse{RoomID: rm.ID}); err != nil {
 			log.Printf("[HUB] RPC ERROR: Failed to encode CreateRoom response: %v", err)
 		}
+    case "JoinServer":
+        var req models.JoinServerRequest
+        if err := json.Unmarshal(env.Params, &req); err != nil {
+            log.Printf("[HUB] RPC ERROR: bad JoinServer params: %v", err)
+            return
+        }
+        log.Printf("[HUB] RPC: JoinServer %s by %s", req.ServerID, remotePeer)
+
+        server, err := s.Store.GetServer(req.ServerID)
+        resp := models.JoinServerResponse{}
+        if err != nil {
+            resp.Error = "server not found"
+        } else if server.Visibility == models.Private {
+            resp.Error = "server is private"
+        } else if server.Visibility == models.PasswordProtected {
+            if !bytes.Equal(req.PasswordHash, server.PasswordHash) {
+                resp.Error = "invalid server password"
+            } else {
+                sanitized := *server
+                sanitized.PasswordSalt = server.PasswordSalt
+                sanitized.PasswordHash = server.PasswordHash
+                resp.Server = &sanitized
+            }
+        } else {
+            sanitized := *server
+            sanitized.PasswordSalt = nil
+            sanitized.PasswordHash = nil
+            resp.Server = &sanitized
+        }
+
+        if err := encoder.Encode(resp); err != nil {
+            log.Printf("[HUB] RPC ERROR: encoding JoinServerResponse: %v", err)
+        }
+
+    case "JoinRoom":
+        var req models.JoinRoomRequest
+        if err := json.Unmarshal(env.Params, &req); err != nil {
+            log.Printf("[HUB] RPC ERROR: bad JoinRoom params: %v", err)
+            return
+        }
+        log.Printf("[HUB] RPC: JoinRoom server=%s room=%s by %s",
+            req.ServerID, req.RoomID, remotePeer)
+
+        resp := models.JoinRoomResponse{}
+        room, err := s.Store.GetRoom(req.ServerID, req.RoomID)
+        if err != nil {
+            resp.Error = "room not found"
+        } else if room.Visibility == models.Private {
+            resp.Error = "room is private"
+        } else if room.Visibility == models.PasswordProtected {
+            // check password hash
+            if !bytes.Equal(req.PasswordHash, room.PasswordHash) {
+                resp.Error = "invalid room password"
+            } else {
+                resp.Room = room
+            }
+        } else {
+            resp.Room = room
+        }
+
+        if err := encoder.Encode(resp); err != nil {
+            log.Printf("[HUB] RPC ERROR: encoding JoinRoomResponse: %v", err)
+        }
+
 
 	default:
 		log.Printf("[HUB] RPC ERROR: Unknown method '%s' called by %s",

@@ -90,7 +90,7 @@ func TestHubServer_CRUD(t *testing.T) {
     createReq := models.CreateServerRequest{
         Name:       "TestServer",
 		Description: "A cool server",
-        Visibility: models.ServerPublic,
+        Visibility: models.Public,
     }
     var createResp models.CreateServerResponse
     sendRPC(t, ctx, client, hubAddr, "CreateServer", createReq, &createResp)
@@ -114,7 +114,7 @@ func TestHubServer_CRUD(t *testing.T) {
     roomReq := models.CreateRoomRequest{
         ServerID:   createResp.ServerID,
         RoomName:   "lobby",
-        Visibility: models.RoomPublic,
+        Visibility: models.Public,
     }
     var roomResp models.CreateRoomResponse
     sendRPC(t, ctx, client, hubAddr, "CreateRoom", roomReq, &roomResp)

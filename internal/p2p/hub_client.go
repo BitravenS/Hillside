@@ -47,14 +47,14 @@ func (n *Node) FetchServersFromHub(hubAddr string) ([]models.ServerMeta, error) 
     }
     return resp.Servers, nil
 }
-func (n *Node) CreateServer(name string, desc string, vis models.ServerVisibility, password []byte) (string, error) {
+func (n *Node) CreateServer(name string, desc string, vis models.Visibility, password []byte) (string, error) {
 
 	req := models.CreateServerRequest{
         Name:       name,
 		Description: desc,
         Visibility: vis,
     }
-	if vis != models.ServerPublic {
+	if vis != models.Public {
 		salt := make([]byte, 16)
 		if _, err := rand.Read(salt); err != nil {
 			return "", err
@@ -80,14 +80,14 @@ func (n *Node) FetchRoomsFromHub(serverID string) ([]models.RoomMeta, error) {
     return resp.Rooms, nil
 }
 
-func (n *Node) CreateRoom(serverID, roomName string, vis models.RoomVisibility, encryptedRoomKey []byte, password []byte) error {
+func (n *Node) CreateRoom(serverID, roomName string, vis models.Visibility, encryptedRoomKey []byte, password []byte) error {
     req := models.CreateRoomRequest{
         ServerID:         serverID,
         RoomName:         roomName,
         Visibility:       vis,
 		EncRoomKey: encryptedRoomKey,
     }
-	if vis != models.RoomPublic {
+	if vis != models.Public {
 		salt := make([]byte, 16)
 		if _, err := rand.Read(salt); err != nil {
 			return err

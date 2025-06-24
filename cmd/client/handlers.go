@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
 	"hillside/internal/models"
 	"hillside/internal/profile"
 	"hillside/internal/utils"
@@ -86,7 +87,7 @@ func (cli *Client) createServerHandler(request models.CreateServerRequest) (serv
 	if request.Name == "" {
 		return "", utils.CreateServerError("Server name cannot be empty")
 	}
-	if request.Visibility == models.ServerPrivate && len(request.PasswordHash) == 0 {
+	if request.Visibility == models.Private && len(request.PasswordHash) == 0 {
 		return "" , utils.CreateServerError("Private servers must have a password")
 	}
 	salt := make([]byte, 16)
@@ -103,4 +104,56 @@ func (cli *Client) createServerHandler(request models.CreateServerRequest) (serv
 	serverID = resp.ServerID
 	go cli.refreshServerList()
 	return serverID, nil
+}
+
+func (cli *Client) createRoomHandler(req models.CreateRoomRequest) (string, error) {
+	if req.RoomName == "" {
+		return "", utils.CreateRoomError("Room name cannot be empty")
+	}
+	if req.Visibility == models.Private && len(req.PasswordHash) == 0 {
+		return "", utils.CreateRoomError("Private rooms must have a password")
+	}
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", utils.CreateRoomError("Failed to generate salt: " + err.Error())
+	}
+	req.PasswordSalt = salt
+	hash := sha256.Sum256(req.PasswordHash)
+	req.PasswordHash = hash[:]
+	resp, err := cli.requestCreateRoom(req)
+	if err != nil {
+		return "", utils.CreateRoomError("Failed to create room: " + err.Error())
+	}
+	go cli.refreshRoomList()
+	return resp.RoomID, nil
+}
+
+
+func (cli *Client) joinServerHandler(serverID string, pass string) error {
+	if serverID == "" {
+		return utils.JoinServerError("Server ID cannot be empty")
+	}
+
+
+	err := cli.requestJoinServer(serverID, pass)
+	if err != nil {
+		return utils.JoinServerError("Failed to join server: " + err.Error())
+	}
+	cli.UI.Pages.SwitchToPage("chat")
+	cli.UI.ChatScreen.roomWrapper.SetTitle(fmt.Sprintf("[ %s ]", cli.Session.Server.Name))
+	go cli.refreshRoomList()
+	return nil
+}
+
+func (cli *Client) joinRoomHandler(serverID, roomID, pass string) error {
+	if serverID == "" || roomID == "" {
+		return utils.JoinRoomError("Server ID and Room ID cannot be empty")
+	}
+	err := cli.requestJoinRoom(serverID, roomID, pass)
+	if err != nil {
+		return utils.JoinRoomError("Failed to join room: " + err.Error())
+	}
+	cli.UI.ChatScreen.chatSection.SetTitle(fmt.Sprintf("[ %s ]", cli.Session.Room.Name))
+	go cli.refreshRoomList()
+	return nil
 }

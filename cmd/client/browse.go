@@ -18,12 +18,15 @@ type BrowseScreen struct {
     serverPane *tview.Flex      
     infoView   *tview.TextView
     OnCreateServer func(request models.CreateServerRequest) (sid string, err error)
+    OnJoinServer func(serverID string, pass string) error
     servers    []models.ServerMeta
     modalForm  *tview.Form
 	createBtn  *tview.Button
     noServersView *tview.TextView
     Hub        string
     title     *tview.TextView
+    joinForm *tview.Form
+    selectedServer *models.ServerMeta
 }
 
 func (b *BrowseScreen) NewBrowseScreen() {
@@ -36,6 +39,15 @@ func (b *BrowseScreen) NewBrowseScreen() {
     b.serverList.SetSelectedTextColor(b.UI.Theme.GetColor("primary")).
         SetHighlightFullLine(true)
 
+    b.serverList.SetChangedFunc(func(index int, mainText string, secondaryText string, shortcut rune) {
+        if index >= 0 && index < len(b.servers) {
+            srv := b.servers[index]
+            b.infoView.SetText(
+                fmt.Sprintf("[yellow]Server:[white] %s\n[yellow]Description:[white] %s\n[yellow]Online:[white] %d\n",
+                    srv.Name, srv.Description, srv.Online,
+                ))
+        }
+    })
 	b.serverList.
         SetTitleColor(b.Theme.GetColor("primary")).
         SetBackgroundColor(b.Theme.GetColor("background"))
@@ -93,11 +105,11 @@ func (b *BrowseScreen) NewBrowseScreen() {
         AddItem(serverView, 0, 1, true)
 }
 
-func formatBoolPasswordProtected(passwordProtected models.ServerVisibility) string {
-	if passwordProtected == models.ServerPasswordProtected {
+func formatBoolPasswordProtected(passwordProtected models.Visibility) string {
+	if passwordProtected == models.PasswordProtected {
 		return "🔒"
 	}
-	return "🔓"
+	return "    "
 }
 func (b *BrowseScreen) UpdateServerList(servers []models.ServerMeta) {
     b.servers = servers
@@ -109,13 +121,12 @@ func (b *BrowseScreen) UpdateServerList(servers []models.ServerMeta) {
                 SetTextColor(b.Theme.GetColor("foreground")).
                 SetText("No servers available. Create a new server to get started.")
             b.serverPane.AddItem(b.noServersView, 0, 1, false)
-            b.infoView.SetText("No servers available. Create a new server to get started.")
+            b.infoView.SetText("")
         }
     } else {
         b.serverPane.RemoveItem(b.noServersView)
 
     for i, srv := range servers {
-        // The main text shows name, description, lock icon, online count
         line := fmt.Sprintf(
             "%-20s | %-30s | %s | %3d Online",
             srv.Name,
@@ -123,15 +134,20 @@ func (b *BrowseScreen) UpdateServerList(servers []models.ServerMeta) {
             formatBoolPasswordProtected(srv.Visibility),
             srv.Online,
         )
-        // store index i in the List for selection
+
         b.serverList.AddItem(line, "", 0, func(idx int) func() {
             return func() {
-                // on select handler
-                srv := b.servers[idx]
-                b.infoView.SetText(
-                    fmt.Sprintf("[yellow]Server:[white] %s\n[yellow]Description:[white] %s\n[yellow]Online:[white] %d\n",
-                        srv.Name, srv.Description, srv.Online,
-                    ))
+                b.selectedServer = &b.servers[idx]
+                if b.selectedServer.Visibility == models.Public {
+                    err := b.OnJoinServer(b.selectedServer.ID, "")
+                    if err != nil {
+                        b.UI.ShowToast("Join server failed: "+err.Error(), 3*time.Second, nil)
+                        return
+                    }
+                } else  {
+                    b.showJoinServerForm()
+                }
+                
             }
         }(i))
     }
@@ -188,7 +204,7 @@ func (b *BrowseScreen) showCreateServerForm() {
 			description := b.modalForm.GetFormItemByLabel("Description").(*tview.InputField).GetText()
             pass := b.modalForm.GetFormItemByLabel("Password (opt)").(*tview.InputField).GetText()
 			visibilityIndex, _ := b.modalForm.GetFormItemByLabel("Visibility").(*tview.DropDown).GetCurrentOption()
-			visibility := models.ServerVisibility(visibilityIndex)
+			visibility := models.Visibility(visibilityIndex)
 			req := models.CreateServerRequest{
 				Name:        name,
 				Description: description,
@@ -201,7 +217,7 @@ func (b *BrowseScreen) showCreateServerForm() {
 				b.UI.ShowToast("Create server failed: "+err.Error(), 3*time.Second, nil)
 				return
 			}
-            if req.Visibility == models.ServerPrivate {
+            if req.Visibility == models.Private {
                 b.UI.ShowToast(fmt.Sprintf("Server created successfully! ID: %s\nThis ServerID will be the only way to access the server. It's been saved under ~/.hillside, encrypted with the server password. DON'T LOSE IT",sid), 0, nil)
                 saveEncryptedSID(sid, pass)
             } else {
@@ -234,6 +250,57 @@ func (b *BrowseScreen) showCreateServerForm() {
     b.UI.App.SetFocus(b.modalForm)
 }
 
+func (b *BrowseScreen) showJoinServerForm(){
+    b.joinForm = tview.NewForm()
+
+    bgColor, fieldBg, buttonBg, buttonText, fieldText := b.UI.Theme.FormColors()
+    b.joinForm.SetBackgroundColor(bgColor)
+    b.joinForm.SetButtonBackgroundColor(buttonBg)
+    b.joinForm.SetButtonTextColor(buttonText)
+    b.joinForm.SetFieldBackgroundColor(fieldBg)
+    b.joinForm.SetFieldTextColor(fieldText)
+    b.joinForm.SetLabelColor(b.UI.Theme.GetColor("primary"))
+	b.joinForm.SetBorder(true)
+    b.joinForm.SetBorderColor(b.UI.Theme.GetColor("border"))
+	b.joinForm.SetBorderAttributes(tcell.AttrNone)
+
+    b.joinForm.AddPasswordField("Password", "", 0, '*', nil).
+        AddButton("Join", func() {
+            pass := b.joinForm.GetFormItemByLabel("Password").(*tview.InputField).GetText()
+			
+			
+			err := b.OnJoinServer(b.selectedServer.ID, pass)
+			if err != nil {
+				b.UI.ShowToast("Join server failed: "+err.Error(), 0, nil)
+				return
+			}
+           
+            b.UI.Pages.RemovePage("joinServer")
+        }).
+        AddButton("Cancel", func() {
+            b.UI.Pages.RemovePage("joinServer")
+        })
+
+
+    b.joinForm.SetBorder(true).
+        SetTitle(fmt.Sprintf("[ Join %s ]", b.selectedServer.Name)).
+        SetTitleAlign(tview.AlignCenter).
+        SetTitleColor(b.UI.Theme.GetColor("primary"))
+
+	mf := func(p tview.Primitive, width, height int) tview.Primitive {
+		return tview.NewFlex().
+			AddItem(nil, 0, 1, false).
+			AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+				AddItem(nil, 0, 1, false).
+				AddItem(p, height, 1, true).
+				AddItem(nil, 0, 1, false), width, 1, true).
+			AddItem(nil, 0, 1, false)
+	}
+
+
+    b.UI.Pages.AddPage("joinServer", mf(b.joinForm,40,10), true, true)
+    b.UI.App.SetFocus(b.joinForm)
+}
 
 func (cli *Client) refreshServerList() {
     serverResp, err := cli.requestServers()
@@ -246,7 +313,5 @@ func (cli *Client) refreshServerList() {
         } else {
             cli.UI.BrowseScreen.UpdateServerList(serverResp.Servers)
         }
-    })
-
-    
+    })  
 }

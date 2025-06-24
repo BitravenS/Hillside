@@ -9,6 +9,7 @@ var (
     ProfileNotFound = errors.New("profile not found")
     InvalidPassword = errors.New("invalid password")
     ServerNotFound = errors.New("server not found")
+    RoomNotFound = errors.New("room not found")
     DuplicateID = errors.New("duplicate ID detected")
 )
 
@@ -18,4 +19,15 @@ func ThemeError(message string) error {
 
 func CreateServerError(message string) error {
     return fmt.Errorf("create server error: %s", message)
+}
+
+func CreateRoomError(message string) error {
+    return fmt.Errorf("create room error: %s", message)
+}
+
+func JoinServerError(message string) error {
+    return fmt.Errorf("join server error: %s", message)
+}
+func JoinRoomError(message string) error {
+    return fmt.Errorf("join room error: %s", message)
 }

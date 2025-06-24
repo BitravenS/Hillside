@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"hillside/internal/models"
@@ -31,6 +32,86 @@ func (cli *Client) requestCreateServer(req models.CreateServerRequest) (*models.
 	}
 	return &resp, nil
 }
+
+func (cli *Client) requestCreateRoom(req models.CreateRoomRequest) (*models.CreateRoomResponse, error) {
+	var resp models.CreateRoomResponse
+	err := cli.Node.SendRPC("CreateRoom", req, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	return &resp, nil
+}
+
+func (cli *Client) requestRooms(serverID string) (*models.ListRoomsResponse, error) {
+	var roomsResp models.ListRoomsResponse
+	err := cli.Node.SendRPC("ListRooms", models.ListRoomsRequest{ServerID: serverID}, &roomsResp)
+	if err != nil {
+		return nil, err
+	}
+	return &roomsResp, nil
+}
+
+func (cli *Client) getServerName() string {
+	if cli.Session == nil {
+		return fmt.Errorf("Session is not initialized").Error()
+	}
+	return cli.Session.Server.Name
+}
+
+func (cli *Client) getServerId() string {
+	if cli.Session == nil {
+		return fmt.Errorf("Session is not initialized").Error()
+	}
+	return cli.Session.Server.ID
+}
+
+func (cli *Client) getRoomName() string {
+	if cli.Session == nil {
+		return fmt.Errorf("Session is not initialized").Error()
+	}
+	if cli.Session.Room == nil {
+		return ""
+	}
+	return cli.Session.Room.Name
+}
+
+func (cli *Client) requestJoinServer(serverID string, pass string) error {
+	var resp models.JoinServerResponse
+
+	passwordHash := sha256.Sum256([]byte(pass))
+	err := cli.Node.SendRPC("JoinServer", models.JoinServerRequest{ServerID: serverID, PasswordHash: passwordHash[:]}, &resp)
+	if err != nil {
+		return err
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("failed to join server: %s", resp.Error)
+	}
+	cli.UI.ShowToast(fmt.Sprintf("Joining server %+v", resp.Server),0,nil)
+
+	cli.Session.Server = resp.Server
+
+	return nil
+}
+
+func (cli *Client) requestJoinRoom(serverID, roomID, pass string) error {
+	var resp models.JoinRoomResponse
+	passwordHash := sha256.Sum256([]byte(pass))
+	err := cli.Node.SendRPC("JoinRoom", models.JoinRoomRequest{ServerID: serverID, RoomID: roomID, PasswordHash: passwordHash[:]}, &resp)
+	if err != nil {
+		return err
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("failed to join room: %s", resp.Error)
+	}
+
+	cli.Session.Room = resp.Room
+
+	return nil
+}
+
 
 func saveEncryptedSID(sid string, password string) error {
 	// Encrypt the SID with the password
