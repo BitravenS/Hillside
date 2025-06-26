@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"hillside/internal/models"
+	"hillside/internal/p2p"
 	"hillside/internal/profile"
 	"hillside/internal/utils"
+	"log"
 	"time"
 
 	kyber "github.com/cloudflare/circl/kem/kyber/kyber1024"
@@ -158,7 +160,21 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 	if err != nil {
 		return utils.JoinRoomError(err.Error())
 	}
+	RekeyTopic := p2p.RekeyTopic(cli.Session.Server.ID, cli.Session.Room.ID)
+	topic, err := cli.Node.PS.Join(RekeyTopic)
+	if err != nil {
+		return err
+	}
+	cli.Node.Topics.RekeyTopic = topic
 	cli.UI.ChatScreen.chatSection.SetTitle(fmt.Sprintf("[ %s ]", cli.Session.Room.Name))
+
+	cli.Session.RoomRatchet = &p2p.RoomRatchet{
+		Index: 0,
+		ChainKey:  make([]byte, 0),
+	} //TODO: initialize the ratchet with the room's initial key
+	if err = cli.chatHandler(); err != nil {
+		return utils.JoinRoomError("Failed to initialize chat handler: " + err.Error())
+	}
 	go cli.refreshRoomList()
 	return nil
 }
@@ -168,16 +184,17 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 func (cli *Client) chatHandler() error {
 	kyberPriv, ok := cli.Keybag.KyberPriv.(*kyber.PrivateKey)
 	if !ok {
-		return fmt.Errorf("invalid KyberPriv type")
+		return errors.New("invalid KyberPriv type")
 	}
 	if err := cli.Node.ListenForRekeys(cli.Session.Server.ID, cli.Session.Room.ID, kyberPriv); err != nil {
 		return err
 	}
-
-	topic, err := cli.Node.PS.Join(cli.Node.Topics.ChatTopic(cli.Session.Server.ID, cli.Session.Room.ID))
+	chatTopic := p2p.ChatTopic(cli.Session.Server.ID, cli.Session.Room.ID)
+	topic, err := cli.Node.PS.Join(chatTopic)
 	if err != nil {
 		return err
 	}
+	cli.Node.Topics.ChatTopic = topic
 	sub, err := topic.Subscribe()
 	if err != nil {
 		return err
@@ -214,6 +231,7 @@ func (cli *Client) chatHandler() error {
 					cli.UI.ShowError("Decryption Error", "Failed to decrypt message: "+err.Error(), "OK", 0, nil)
 					continue
 				}
+				log.Fatal("Decrypted message: ", string(pt))
 				decMsg := &models.DecrypetMessage{
 					Sender : env.Sender,
 					Timestamp: env.Timestamp,
@@ -222,6 +240,9 @@ func (cli *Client) chatHandler() error {
 					ServerID: cli.Session.Server.ID,
 				}
 				cli.Session.Messages = append(cli.Session.Messages, *decMsg)
+				line := fmt.Sprintf("[%d] %s: %s", env.Timestamp, env.Sender.Username, decMsg.Content)
+				cli.UI.ChatScreen.chatSection.AddItem(line, "", 0, nil)
+				
 			}
 
 
@@ -259,15 +280,23 @@ func (cli *Client) sendMessageHandler(text string) error {
 		return errors.New("invalid DilithiumPriv type")
 	}
 	data, _ := models.Marshal(msg, *cli.User, dilithiumPriv)
-
-	topic, err := cli.Node.PS.Join(cli.Node.Topics.ChatTopic(cli.Session.Server.ID, cli.Session.Room.ID))
-	if err != nil {
-		return err
+	if cli.Node.Topics.ChatTopic == nil {
+		return errors.New("chat topic is not initialized")
 	}
-	err = topic.Publish(cli.Node.Ctx, data)
+	err := cli.Node.Topics.ChatTopic.Publish(cli.Node.Ctx, data)
 	if err != nil {
 		return err
 	}
 	return nil
 
 }
+/*
+
+func (cli *Client) refreshMessageList() {
+	// Clear the current message list
+
+	// Add all messages from the session
+	for _, msg := range cli.Session.Messages {
+		cli.UI.ChatScreen.chatSection.AddMessage(msg)
+	}
+}*/

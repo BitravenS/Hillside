@@ -82,6 +82,26 @@ func (c *ChatScreen) NewChatScreen() {
             Foreground(c.Theme.GetColor("foreground-dark"))).
         SetTextStyle(tcell.StyleDefault.Background(c.Theme.GetColor("background")).
             Foreground(c.Theme.GetColor("foreground")))
+    
+    c.msgInput.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+        if event.Key() == tcell.KeyEnter {
+            message := c.msgInput.GetText()
+            if message != "" {
+                err := c.sendMessage(message)
+                if err != nil {
+                    c.UI.ShowError("Send message failed", err.Error(), "OK", 0, nil)
+                    return nil
+                }
+                c.UI.ShowToast("Message sent successfully! "+message , 2*time.Second, nil)
+                c.msgInput.SetText("",false)
+            }
+            return nil
+        } else if event.Key() == tcell.KeyEscape {
+            c.UI.App.SetFocus(c.chatSection) // Focus back to chat section on Escape
+            return nil
+        }
+        return event
+    })
 
     c.msgInput.SetWordWrap(true).SetWrap(true)
     c.msgInput.SetBorder(true).
@@ -90,8 +110,6 @@ func (c *ChatScreen) NewChatScreen() {
 
     c.chatSection = tview.NewList() //where the messages will be displayed
     
-
-
 
     c.chatView = tview.NewFlex()
     c.chatView.SetDirection(tview.FlexRow)

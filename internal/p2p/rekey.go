@@ -58,11 +58,8 @@ func (n *Node) RotateRoomKey(serverID, roomID string, memberPeers []models.User,
 // ListenForRekeys subscribes to the room’s rekey topic and updates n.RoomKey
 // whenever there’s a RekeyMessage addressed to this node.
 func (n *Node) ListenForRekeys(serverID, roomID string, pk *kyber1024.PrivateKey) error {
-    rkt, err := n.PS.Join(RekeyTopic(serverID, roomID))
-    if err != nil {
-        return fmt.Errorf("failed to join rekey topic: %w", err)
-    }
-	sub, err := rkt.Subscribe()
+
+	sub, err := n.Topics.RekeyTopic.Subscribe()
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to rekey topic: %w", err)
 	}

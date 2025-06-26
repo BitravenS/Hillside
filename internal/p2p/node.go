@@ -19,8 +19,8 @@ import (
 var protocolID = hub.HubProtocolID
 
 type Topics struct {
-	RekeyTopic func(serverID, roomID string) string 
-	ChatTopic  func(serverID, roomID string) string
+	RekeyTopic *pubsub.Topic
+	ChatTopic  *pubsub.Topic
 }
 
 type Node struct {
@@ -30,7 +30,7 @@ type Node struct {
 	Ctx   context.Context
 	PK lib.PrivKey
 	HubAddr string
-	Topics *Topics
+	Topics Topics
 }
 
 func (n *Node) InitHost(listenAddrs []string) error{
@@ -72,6 +72,9 @@ func (n *Node) InitNode() error {
 		return err
 	}
 	if err := n.InitDHT(); err != nil {
+		return err
+	}
+	if err := n.InitPubSub(); err != nil {
 		return err
 	}
 	return nil
