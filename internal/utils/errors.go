@@ -31,3 +31,24 @@ func JoinServerError(message string) error {
 func JoinRoomError(message string) error {
     return fmt.Errorf("join room error: %s", message)
 }
+
+func ValidationError(message string) error {
+    return fmt.Errorf("validation error: %s", message)
+}
+
+func SecurityError(message string) error {
+    return fmt.Errorf("security error: %s", message)
+}
+
+func PQaeadError(message string) error {
+    return fmt.Errorf("pq-aead error: %s", message)
+}
+
+func IsValidationError(err error) bool {
+    return errors.Is(err, ValidationError(""))
+}
+
+func IsSecurityError(err error) bool {
+    return errors.Is(err, SecurityError(""))
+}
+

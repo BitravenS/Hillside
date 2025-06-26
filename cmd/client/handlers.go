@@ -3,11 +3,16 @@ package main
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"hillside/internal/models"
 	"hillside/internal/profile"
 	"hillside/internal/utils"
 	"time"
+
+	kyber "github.com/cloudflare/circl/kem/kyber/kyber1024"
+	"github.com/cloudflare/circl/sign/dilithium/mode2"
+	chacha "golang.org/x/crypto/chacha20poly1305"
 )
 type loginSession struct {
 	Username string
@@ -156,4 +161,113 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 	cli.UI.ChatScreen.chatSection.SetTitle(fmt.Sprintf("[ %s ]", cli.Session.Room.Name))
 	go cli.refreshRoomList()
 	return nil
+}
+
+
+
+func (cli *Client) chatHandler() error {
+	kyberPriv, ok := cli.Keybag.KyberPriv.(*kyber.PrivateKey)
+	if !ok {
+		return fmt.Errorf("invalid KyberPriv type")
+	}
+	if err := cli.Node.ListenForRekeys(cli.Session.Server.ID, cli.Session.Room.ID, kyberPriv); err != nil {
+		return err
+	}
+
+	topic, err := cli.Node.PS.Join(cli.Node.Topics.ChatTopic(cli.Session.Server.ID, cli.Session.Room.ID))
+	if err != nil {
+		return err
+	}
+	sub, err := topic.Subscribe()
+	if err != nil {
+		return err
+	}
+
+
+	go func() error {
+		for {
+			msg, err := sub.Next(cli.Node.Ctx)
+			if err != nil {
+				return nil
+			}
+			env, message, err := models.UnmarshalEnvelope(msg.Data)
+			if err != nil {
+				return err
+			}
+			senderID := msg.ReceivedFrom
+			err = cli.validateChatMessage(env, message.(*models.ChatMessage), senderID)
+			if err != nil {
+
+				if utils.IsValidationError(err) {
+					cli.UI.ShowError("Validation Error", err.Error(), "OK", 0, nil)
+				}
+				 if utils.IsSecurityError(err) {
+					cli.UI.ShowError("Security Error", err.Error(), "OK", 0, nil)
+					// notify other clients
+				}
+			}
+
+			castedMsg, ok := message.(*models.ChatMessage)
+			if ok {
+				pt, err := cli.decryptMessage(castedMsg)
+				if err != nil {
+					cli.UI.ShowError("Decryption Error", "Failed to decrypt message: "+err.Error(), "OK", 0, nil)
+					continue
+				}
+				decMsg := &models.DecrypetMessage{
+					Sender : env.Sender,
+					Timestamp: env.Timestamp,
+					Content: string(pt),
+					RoomID: cli.Session.Room.ID,
+					ServerID: cli.Session.Server.ID,
+				}
+				cli.Session.Messages = append(cli.Session.Messages, *decMsg)
+			}
+
+
+
+		}
+	}()
+	return nil
+   
+}
+
+
+func (cli *Client) decryptMessage(cm *models.ChatMessage) ([]byte, error) {
+    // Advance ratchet to the message’s index
+    for cli.Session.RoomRatchet.Index <= cm.ChainIndex {
+        cli.Session.RoomRatchet.NextKey()
+    }
+    key, nonce, _ := cli.Session.RoomRatchet.NextKey()
+    aead, _ := chacha.New(key)
+    return aead.Open(nil, nonce, cm.Ciphertext, nil)
+}
+
+func (cli *Client) sendMessageHandler(text string) error {
+    key, nonce, _ := cli.Session.RoomRatchet.NextKey()
+    aead, _ := chacha.New(key)
+    ct := aead.Seal(nil, nonce, []byte(text), nil)
+
+	// 3b) Wrap in your unified envelope
+	msg := &models.ChatMessage{
+		ChainIndex: cli.Session.RoomRatchet.Index - 1,
+		Ciphertext: ct,
+	}
+
+	dilithiumPriv, ok := cli.Keybag.DilithiumPriv.(*mode2.PrivateKey)
+	if !ok {
+		return errors.New("invalid DilithiumPriv type")
+	}
+	data, _ := models.Marshal(msg, *cli.User, dilithiumPriv)
+
+	topic, err := cli.Node.PS.Join(cli.Node.Topics.ChatTopic(cli.Session.Server.ID, cli.Session.Room.ID))
+	if err != nil {
+		return err
+	}
+	err = topic.Publish(cli.Node.Ctx, data)
+	if err != nil {
+		return err
+	}
+	return nil
+
 }

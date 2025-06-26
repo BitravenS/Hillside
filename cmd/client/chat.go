@@ -28,7 +28,6 @@ type ChatScreen struct {
     OnJoinRoom func (roomID string, pass string) error
     sendMessage func (message string) error
     OnCreateRoom func (req models.CreateRoomRequest) (string, error)
-    msgField *tview.Flex
     msgInput *tview.TextArea
     sendButton *tview.Button
     joinForm *tview.Form
@@ -74,8 +73,7 @@ func (c *ChatScreen) NewChatScreen() {
         SetBorderPadding(2,2,2,2)
 
 
-    c.msgField = tview.NewFlex()
-    c.msgField.SetDirection(tview.FlexColumn)
+
 
     c.msgInput = tview.NewTextArea().
         SetPlaceholder("Type your message here...").
@@ -90,24 +88,6 @@ func (c *ChatScreen) NewChatScreen() {
         SetBorderColor(c.Theme.GetColor("foreground"))
 
 
-    c.sendButton = tview.NewButton("Send")
-    c.sendButton.SetLabelColor(c.Theme.GetColor("button-text")).
-        SetSelectedFunc(func() {
-            c.sendMessage(c.msgInput.GetText())
-        })
-    
-
-    c.sendButton.SetBackgroundColor(c.Theme.GetColor("button-active"))
-    c.msgField.AddItem(c.msgInput, 0, 1, true).
-        AddItem(nil, 2, 0, false).
-        AddItem(tview.NewFlex().
-            SetDirection(tview.FlexRow).
-            AddItem(nil,0,1,false).
-            AddItem(c.sendButton,1,0,false).
-            AddItem(nil,0,1,false),
-         6, 0, false)
- 
-
     c.chatSection = tview.NewList() //where the messages will be displayed
     
 
@@ -116,7 +96,7 @@ func (c *ChatScreen) NewChatScreen() {
     c.chatView = tview.NewFlex()
     c.chatView.SetDirection(tview.FlexRow)
     c.chatView.AddItem(c.chatSection, 0, 1, false).
-        AddItem(c.msgField, 5, 0, true)
+        AddItem(c.msgInput, 5, 0, true)
 
 
     c.chatSection.SetBorder(true).

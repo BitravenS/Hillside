@@ -9,6 +9,9 @@ import (
 type Session struct {
 	Server *models.ServerMeta
 	Room *models.RoomMeta
+	RoomRatchet *p2p.RoomRatchet
+	Members []models.User
+	Messages []models.DecrypetMessage
 	Password string
 }
 type Client struct {
@@ -40,6 +43,7 @@ func main() {
 		getServerId: client.getServerId,
 		createRoomHandler: client.createRoomHandler,
 		joinRoomHandler: client.joinRoomHandler,
+		sendMessageHandler: client.sendMessageHandler,
 
 	})
 	node := &p2p.Node{

@@ -17,6 +17,12 @@ import (
 )
 
 var protocolID = hub.HubProtocolID
+
+type Topics struct {
+	RekeyTopic func(serverID, roomID string) string 
+	ChatTopic  func(serverID, roomID string) string
+}
+
 type Node struct {
 	Host   host.Host
 	DHT    *dht.IpfsDHT
@@ -24,6 +30,7 @@ type Node struct {
 	Ctx   context.Context
 	PK lib.PrivKey
 	HubAddr string
+	Topics *Topics
 }
 
 func (n *Node) InitHost(listenAddrs []string) error{
