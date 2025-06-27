@@ -14,4 +14,6 @@ type RoomMeta struct {
 	PasswordHash []byte `json:"password_hash,omitempty"`
 	PasswordSalt []byte `json:"password_salt,omitempty"`
 	EncRoomKey []byte `json:"enc_room_key,omitempty"`
+
+	Members map[string]Member `json:"members,omitempty"` // key: peer ID, value: Member
 }

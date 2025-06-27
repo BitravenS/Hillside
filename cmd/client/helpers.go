@@ -89,7 +89,6 @@ func (cli *Client) requestJoinServer(serverID string, pass string) error {
 	if resp.Error != "" {
 		return fmt.Errorf("failed to join server: %s", resp.Error)
 	}
-	cli.UI.ShowToast(fmt.Sprintf("Joining server %+v", resp.Server),0,nil)
 
 	cli.Session.Server = resp.Server
 
@@ -103,7 +102,7 @@ func (cli *Client) requestJoinRoom(roomID, pass string) error {
 	if sid == "" {
 		return fmt.Errorf("no server joined, cannot join room")
 	}
-	err := cli.Node.SendRPC("JoinRoom", models.JoinRoomRequest{ServerID: sid, RoomID: roomID, PasswordHash: passwordHash[:]}, &resp)
+	err := cli.Node.SendRPC("JoinRoom", models.JoinRoomRequest{ServerID: sid, RoomID: roomID, PasswordHash: passwordHash[:], Sender: *cli.User}, &resp)
 	if err != nil {
 		return err
 	}
@@ -114,6 +113,21 @@ func (cli *Client) requestJoinRoom(roomID, pass string) error {
 	cli.Session.Room = resp.Room
 
 	return nil
+}
+
+func (cli *Client) requestListRoomMembers() (*models.ListRoomMembersResponse, error) {
+	if cli.Session == nil || cli.Session.Room == nil {
+		return nil, fmt.Errorf("no room joined, cannot list members")
+	}
+	var resp models.ListRoomMembersResponse
+	err := cli.Node.SendRPC("ListRoomMembers", models.ListRoomMembersRequest{ServerID: cli.Session.Server.ID, RoomID: cli.Session.Room.ID}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	return &resp, nil
 }
 
 
@@ -160,5 +174,31 @@ func saveEncryptedSID(sid string, password string) error {
 	if err := enc.Encode(data); err != nil {
 		return err
 	}
+	return nil
+}
+
+
+
+
+func (cli *Client) Shutdown() error {
+	if cli.Node.Host != nil {
+		_ = cli.Node.Host.Close() // close the libp2p host
+	}
+	if cli.Node.DHT != nil {
+		cli.Node.DHT.Close() // close the DHT
+	}
+	// Close individual topics if they exist
+	if cli.Node.Topics.ChatTopic != nil {
+		_ = cli.Node.Topics.ChatTopic.Close()
+	}
+	if cli.Node.Topics.RekeyTopic != nil {
+		_ = cli.Node.Topics.RekeyTopic.Close()
+	}
+	// Add any other topics that need to be closed
+	
+	if cli.Node.Ctx != nil {
+		cli.Node.Ctx.Done() // cancel the context
+	}
+
 	return nil
 }

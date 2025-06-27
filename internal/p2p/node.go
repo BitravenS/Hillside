@@ -29,7 +29,7 @@ type Node struct {
 	PS *pubsub.PubSub
 	Ctx   context.Context
 	PK lib.PrivKey
-	HubAddr string
+	Hub *peer.AddrInfo
 	Topics Topics
 }
 
@@ -47,7 +47,12 @@ func (n *Node) InitHost(listenAddrs []string) error{
 }
 
 func (n *Node) InitDHT() error {
-	dht, err := dht.New(n.Ctx, n.Host)
+	dhtOpts := []dht.Option{
+        dht.Mode(dht.ModeServer),
+        // include the Hub and public IPFS peers as bootstrap
+        dht.BootstrapPeers(*n.Hub),
+    }
+	dht, err := dht.New(n.Ctx, n.Host, dhtOpts...)
 	if err != nil {
 		return err
 	}
@@ -71,6 +76,10 @@ func (n *Node) InitNode() error {
 	if err := n.InitHost([]string{"/ip4/0.0.0.0/tcp/0"}); err != nil {
 		return err
 	}
+
+	if err := n.Host.Connect(n.Ctx, *n.Hub); err != nil {
+		return err
+	}
 	if err := n.InitDHT(); err != nil {
 		return err
 	}
@@ -81,15 +90,8 @@ func (n *Node) InitNode() error {
 }
 
 func (n *Node) SendRPC(method string, params interface{}, out interface{}) error {
-	pi, err := peer.AddrInfoFromString(n.HubAddr)
-	if err != nil {
-		return err
-	}
+	pi := n.Hub
 	
-    err = n.Host.Connect(n.Ctx, *pi)
-	if err != nil {
-		return err
-	}
 	s, err := n.Host.NewStream(n.Ctx, pi.ID, protocol.ID(protocolID))
     defer s.Close()
 

@@ -1,5 +1,6 @@
 package models
 
+
 type ListServersRequest struct{} 
 type ListServersResponse struct {
 	Servers []ServerMeta `json:"servers"`
@@ -55,9 +56,20 @@ type JoinRoomRequest struct {
     ServerID     string `json:"server_id"`
     RoomID       string `json:"room_id"`
     PasswordHash []byte `json:"password_hash,omitempty"`
+	Sender User `json:"sender"`
 }
 
 type JoinRoomResponse struct {
     Room  *RoomMeta `json:"room,omitempty"`
     Error string    `json:"error,omitempty"`
+}
+
+type ListRoomMembersRequest struct {
+    ServerID string `json:"server_id"`
+    RoomID   string `json:"room_id"`
+}
+
+type ListRoomMembersResponse struct {
+    Members []Member `json:"members"`
+    Error   string     `json:"error,omitempty"`
 }

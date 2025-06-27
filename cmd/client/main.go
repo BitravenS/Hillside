@@ -4,12 +4,14 @@ import (
 	"context"
 	"hillside/internal/models"
 	"hillside/internal/p2p"
+	"log"
 )
 
 type Session struct {
 	Server *models.ServerMeta
 	Room *models.RoomMeta
 	RoomRatchet *p2p.RoomRatchet
+	BackupRatchet *p2p.RoomRatchet // Ratchet for 5 epochs behind
 	Members []models.User
 	Messages []models.DecrypetMessage
 	Password string
@@ -55,6 +57,13 @@ func main() {
 		Room: nil,
 		Password: "",
 	}
+
+	defer func() {
+        if err := client.Shutdown(); err != nil {
+            log.Printf("[Shutdown] Failed to close node resources: %v", err)
+        }
+    }()
+	
 	if err := client.UI.App.Run(); err != nil {
 		panic(err)
 	}

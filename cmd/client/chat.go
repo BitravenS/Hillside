@@ -92,7 +92,6 @@ func (c *ChatScreen) NewChatScreen() {
                     c.UI.ShowError("Send message failed", err.Error(), "OK", 0, nil)
                     return nil
                 }
-                c.UI.ShowToast("Message sent successfully! "+message , 2*time.Second, nil)
                 c.msgInput.SetText("",false)
             }
             return nil

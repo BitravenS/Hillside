@@ -196,10 +196,27 @@ func LoadProfile(usrname string, pass string, path string) (*models.Keybag, *mod
 		KyberPriv: kemPriv,
 		Libp2pPriv: libPriv,
 	}
+	dilPub := dilPriv.Public().(*dil2.PublicKey)
+	dilPubBytes, err := dilPub.MarshalBinary()
+	if err != nil {
+		return nil,nil, err
+	}
+
+	kyberPub := kemPriv.Public().(*kyber.PublicKey)
+	libPub := libPriv.GetPublic()
+	libPubBytes, err := crypto.MarshalPublicKey(libPub)
+	if err != nil {
+		return nil,nil, err
+	}
+	kyberPubBytes, err := kyberPub.MarshalBinary()
+	if err != nil {
+		return nil,nil, err
+	}
+
 	usr := &models.User{
-		DilithiumPub: dilPriv.Public().(*dil2.PublicKey),
-		KyberPub: kemPriv.Public().(*kyber.PublicKey),
-		Libp2pPub: libPriv.GetPublic(),
+		DilithiumPub: dilPubBytes,
+		KyberPub: kyberPubBytes,
+		Libp2pPub: libPubBytes,
 		PeerID: prof.PeerID,
 		Username: prof.Username,
 	}

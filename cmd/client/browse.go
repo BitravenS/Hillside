@@ -89,8 +89,7 @@ func (b *BrowseScreen) NewBrowseScreen() {
         SetBackgroundColor(b.Theme.GetColor("button-active"))
 
     b.title = tview.NewTextView().SetDynamicColors(true)
-    b.title.SetText(fmt.Sprintf("[yellow]Hub:[white] %s", b.Hub)).
-        SetTextAlign(tview.AlignLeft)
+    b.title.SetTextAlign(tview.AlignLeft)
     
     header.AddItem(b.title, 0, 2, false).
         AddItem(b.createBtn, 15, 0, false)
@@ -101,7 +100,7 @@ func (b *BrowseScreen) NewBrowseScreen() {
 
     b.layout = tview.NewFlex().SetDirection(tview.FlexRow).
         AddItem(header, 1, 0, false).
-        AddItem(nil, 1, 0, false). 
+        AddItem(tview.NewBox(), 1, 0, false). 
         AddItem(serverView, 0, 1, true)
 }
 

@@ -16,6 +16,8 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	ma "github.com/multiformats/go-multiaddr"
 )
 
 const HubProtocolID = "/hillside/hub/1.0.0"
@@ -39,7 +41,10 @@ func NewHubServer(ctx context.Context, listenAddr string) (*HubServer, error) {
 
 	log.Printf("[HUB] Created libp2p host with ID: %s", h.ID().String())
 
-	dhtNode, err := dht.New(ctx, h)
+	dhtNode, err := dht.New(ctx, h,
+		dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
+		dht.Mode(dht.ModeServer))
+	
 	if err != nil {
 		log.Printf("[HUB] ERROR: Failed to create DHT: %v", err)
 		return nil, err
@@ -65,6 +70,7 @@ func NewHubServer(ctx context.Context, listenAddr string) (*HubServer, error) {
 		Store: st,
 	}
 
+	/*
 	// Set connection notification handlers
 	h.Network().Notify(&network.NotifyBundle{
 		ConnectedF: func(n network.Network, c network.Conn) {
@@ -76,6 +82,7 @@ func NewHubServer(ctx context.Context, listenAddr string) (*HubServer, error) {
 				c.RemotePeer().String())
 		},
 	})
+		*/
 
 	h.SetStreamHandler(HubProtocolID, srv.handleRPC)
 	log.Printf("[HUB] Stream handler set for protocol: %s", HubProtocolID)
@@ -212,6 +219,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 				sanitized := room
 				sanitized.PasswordSalt = nil
 				sanitized.PasswordHash = nil
+				sanitized.Members = nil // Don't leak member info
 
 				out = append(out, sanitized)
 			}
@@ -244,6 +252,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 				PasswordSalt: req.PasswordSalt,
 				PasswordHash: req.PasswordHash,
 				EncRoomKey:   req.EncRoomKey,
+				Members:    map[string]models.Member{},
 			}
 			err := s.Store.CreateRoom(req.ServerID, rm)
 			if err == utils.ServerNotFound {
@@ -320,11 +329,43 @@ func (s *HubServer) handleRPC(stream network.Stream) {
         } else {
             resp.Room = room
         }
+		resp.Room.Members = map[string]models.Member{} // Don't leak member info
+		if err := encoder.Encode(resp); err != nil {
+			log.Printf("[HUB] RPC ERROR: encoding JoinRoomResponse: %v", err)
+		}
+		if remotePeer.String() != req.Sender.PeerID {
+			log.Printf("[HUB] RPC ERROR: Sender peer ID mismatch: %q != %q",
+				remotePeer.String(), req.Sender.PeerID)
+			encoder.Encode(models.JoinRoomResponse{Error: "Sender peer ID mismatch"})
+			return
+		}
 
-        if err := encoder.Encode(resp); err != nil {
-            log.Printf("[HUB] RPC ERROR: encoding JoinRoomResponse: %v", err)
-        }
-
+		room.Members[remotePeer.String()] = models.Member{
+			AddrInfo: peer.AddrInfo{
+				ID:    remotePeer,
+				Addrs: []ma.Multiaddr{stream.Conn().RemoteMultiaddr()},
+			},
+			User: req.Sender,
+		}
+	
+	case "ListRoomMembers":
+		var req models.ListRoomMembersRequest
+		if err := json.Unmarshal(env.Params, &req); err != nil {
+			log.Printf("[HUB] RPC ERROR: Failed to unmarshal ListMembers params: %v", err)
+			encoder.Encode(models.ListRoomMembersResponse{Error: "Invalid parameters"})
+			return
+		}
+		room, err := s.Store.GetRoom(req.ServerID, req.RoomID)
+		if err != nil {
+			encoder.Encode(models.ListRoomMembersResponse{Error: "Room not found"})
+			return
+		}
+		// build a slice:
+		var members []models.Member
+		for _, pi := range room.Members {
+			members = append(members, pi)
+		}
+		encoder.Encode(models.ListRoomMembersResponse{Members: members})
 
 	default:
 		log.Printf("[HUB] RPC ERROR: Unknown method '%s' called by %s",

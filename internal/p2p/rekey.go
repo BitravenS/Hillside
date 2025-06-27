@@ -32,8 +32,13 @@ func (n *Node) RotateRoomKey(serverID, roomID string, memberPeers []models.User,
         // look up their Kyber public key in your Node (you must have stored it somewhere)
 		pid := peer.ID(user.PeerID)
 		pubkey := user.KyberPub
+        kyberPub, err := kyber1024.Scheme().UnmarshalBinaryPublicKey(pubkey)
+        if err != nil {
+            return fmt.Errorf("failed to unmarshal kyber public key for %s: %w", pid, err)
+        }
 
-		ct, _, err := kyber1024.Scheme().EncapsulateDeterministically(pubkey, seed)
+
+		ct, _, err := kyber1024.Scheme().EncapsulateDeterministically(kyberPub, seed)
 		if err != nil {
 			return fmt.Errorf("failed to encapsulate key for %s: %w", pid, err)
 		}

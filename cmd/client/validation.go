@@ -43,7 +43,15 @@ func (cli *Client) validateChatMessageSecurity(env *models.Envelope, msg *models
 	if env.Sender.DilithiumPub == nil {
 		return utils.SecurityError("Sender's public key is missing")
 	}
-	if !mode2.Verify(env.Sender.DilithiumPub, env.Payload, env.Signature) {
+	dilPub, err := mode2.Scheme().UnmarshalBinaryPublicKey(env.Sender.DilithiumPub)
+	if err != nil {
+		return utils.SecurityError("Invalid sender's public key format")
+	}
+	typedPub, ok := dilPub.(*mode2.PublicKey)
+	if !ok {
+		return utils.SecurityError("Failed to convert public key to correct type")
+	}
+	if !mode2.Verify(typedPub, env.Payload, env.Signature) {
 		return utils.SecurityError("Invalid signature for the chat message")
 	}
 
