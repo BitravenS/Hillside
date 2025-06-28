@@ -108,6 +108,7 @@ func (c *ChatScreen) NewChatScreen() {
 
 
     c.chatSection = tview.NewList() //where the messages will be displayed
+    c.chatSection.SetSelectedBackgroundColor(c.UI.Theme.GetColor("background-light"))
     
 
     c.chatView = tview.NewFlex()

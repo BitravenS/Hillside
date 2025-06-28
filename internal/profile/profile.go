@@ -219,6 +219,7 @@ func LoadProfile(usrname string, pass string, path string) (*models.Keybag, *mod
 		Libp2pPub: libPubBytes,
 		PeerID: prof.PeerID,
 		Username: prof.Username,
+		PreferredColor: utils.GenerateRandomColor(),
 	}
 
 	return kb, usr, nil

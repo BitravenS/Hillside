@@ -78,13 +78,13 @@ func NewUI(cfg *UIConfig) *UI {
 
 	ui.LoginScreen = &LoginScreen{
 		UI: ui,
-		Hub: "localhost:8080",
+		Hub: "",
 		loginHandler: cfg.loginHandler,
 		createUserHandler: cfg.createUserHandler,}
 	ui.LoginScreen.NewLoginScreen()
 	ui.BrowseScreen = &BrowseScreen{
 		UI: ui,
-		Hub: "localhost:8080",
+		Hub: "",
 		OnCreateServer: cfg.createServerHandler,
 		OnJoinServer: cfg.joinServerHandler,
 	}

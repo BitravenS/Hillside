@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hillside/internal/models"
@@ -10,10 +11,10 @@ import (
 	"hillside/internal/profile"
 	"hillside/internal/utils"
 	"log"
-	"time"
 
-	kyber "github.com/cloudflare/circl/kem/kyber/kyber1024"
+	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/sign/dilithium/mode2"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 	chacha "golang.org/x/crypto/chacha20poly1305"
 )
@@ -34,7 +35,6 @@ func (cli *Client) loginHandler(username string, password string, hub string) {
 			cli.UI.ShowError("Login failed", err.Error(), "Retry", 0, nil)
 		return
 	}
-	cli.UI.ShowToast("Login successful", 3*time.Second,nil)
 	cli.User = usr
 	cli.Keybag = kb
 
@@ -72,12 +72,11 @@ func (cli *Client) createUserHandler(username string, password string, hub strin
 		cli.UI.ShowError("Error", "Username and password cannot be empty","OK", 0, nil)
 		return
 	}
-	prof, err := profile.GenerateProfile(username, password)
+	_, err := profile.GenerateProfile(username, password)
 	if err != nil {
 		cli.UI.ShowError("Create user failed", err.Error(), "OK", 0, nil)
 		return
 	}
-	cli.UI.ShowToast("User created successfully! Welcome "+ prof.Username, 3*time.Second,nil)
 	kb,usr, err := profile.LoadProfile(username, password, "")
 	if err != nil {
 			cli.UI.ShowError("Login failed", err.Error(), "Retry", 0, nil)
@@ -196,20 +195,40 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 	if err != nil {
 		return utils.JoinRoomError(err.Error())
 	}
+	
 	RekeyTopic := p2p.RekeyTopic(cli.Session.Server.ID, cli.Session.Room.ID)
 	topic, err := cli.Node.PS.Join(RekeyTopic)
 	if err != nil {
 		return err
 	}
 	cli.Node.Topics.RekeyTopic = topic
+	_, err = topic.Subscribe()
+	if err != nil {
+		return err
+	}
+
+
+	MembersTopic := p2p.MembersTopic(cli.Session.Server.ID, cli.Session.Room.ID)
+	top, err := cli.Node.PS.Join(MembersTopic)
+	cli.Node.Topics.MembersTopic = top
+	subs, err := cli.Node.Topics.MembersTopic.Subscribe()
+	if err != nil {
+		return err
+	}
+	go cli.refreshMembersList(subs)
+
+	
 	cli.UI.ChatScreen.chatSection.SetTitle(fmt.Sprintf("[ %s ]", cli.Session.Room.Name))
+	/*
 	if err = cli.Node.AdvertiseRoom(cli.Session.Server.ID, roomID); err != nil {
 		return utils.JoinRoomError("Failed to advertise room: " + err.Error())
 	}
+	*/
 	mbr, err := cli.requestListRoomMembers()
 	if err != nil {
 		return utils.JoinRoomError("Failed to list room members: " + err.Error())
 	}
+
 	members := mbr.Members
 	for _, member := range members {
 		if member.AddrInfo.ID == cli.Node.Host.ID() {
@@ -217,11 +236,12 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 			continue
 		}
 		if err := cli.Node.Host.Connect(cli.Node.Ctx, member.AddrInfo); err != nil {
-            utils.JoinRoomError(
+			utils.JoinRoomError(
 				fmt.Sprintf("connect %s failed: %s", member.AddrInfo.ID.String(), err))
-        }
+		}
+		cli.Session.Members = append(cli.Session.Members, member.User)
 	}
-	cli.UI.ShowToast(fmt.Sprintf("Connected to %d peers", len(members)-1), 3*time.Second, nil)
+
 	cli.Session.RoomRatchet = &p2p.RoomRatchet{
 		Index: 0,
 		ChainKey:  make([]byte, 0),
@@ -240,13 +260,17 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 
 
 func (cli *Client) chatHandler() error {
-	kyberPriv, ok := cli.Keybag.KyberPriv.(*kyber.PrivateKey)
+	
+	kyberPriv, ok := cli.Keybag.KyberPriv.(*kyber1024.PrivateKey)
 	if !ok {
 		return errors.New("invalid KyberPriv type")
 	}
+
+	
 	if err := cli.Node.ListenForRekeys(cli.Session.Server.ID, cli.Session.Room.ID, kyberPriv); err != nil {
 		return err
 	}
+	
 	chatTopic := p2p.ChatTopic(cli.Session.Server.ID, cli.Session.Room.ID)
 	topic, err := cli.Node.PS.Join(chatTopic)
 	if err != nil {
@@ -258,7 +282,7 @@ func (cli *Client) chatHandler() error {
 		return err
 	}
 
-
+	// Recieve messages from the chat topic
 	go func() error {
 		for {
 			msg, err := sub.Next(cli.Node.Ctx)
@@ -297,10 +321,18 @@ func (cli *Client) chatHandler() error {
 					ServerID: cli.Session.Server.ID,
 				}
 				cli.Session.Messages = append(cli.Session.Messages, *decMsg)
-				line := fmt.Sprintf("[%d] %s: %s", env.Timestamp, env.Sender.Username, decMsg.Content)
-				
+				//line := fmt.Sprintf("[%d] %s: %s", env.Timestamp, env.Sender.Username, decMsg.Content)
+				formattedTime := utils.FormatPrettyTime(env.Timestamp)
+
+				prefColor := env.Sender.PreferredColor
+				if !utils.Contains(utils.BaseXtermAnsiColorNames, prefColor) {
+					prefColor = utils.GenerateRandomColor()
+				}
+
+				lineContent := fmt.Sprintf("[yellow][%s] [%s]%s:[white] %s", formattedTime ,prefColor, env.Sender.Username, decMsg.Content)
 				cli.UI.App.QueueUpdateDraw(func() {
-					cli.UI.ChatScreen.chatSection.AddItem(line, "", 0, nil)
+					cli.UI.ChatScreen.chatSection.AddItem(lineContent,"", 0, nil)
+					
 				})
 				
 			}
@@ -384,6 +416,53 @@ func (cli *Client) sendMessageHandler(text string) error {
 		return err
 	}
 	return nil
+
+}
+
+
+func (cli *Client) refreshMembersList(sub *pubsub.Subscription) error {
+
+	for {
+		msg, err := sub.Next(cli.Node.Ctx)
+		if err != nil {
+			return nil
+		}
+		var resp models.ListRoomMembersResponse
+		if err = json.Unmarshal(msg.Data, &resp); err != nil {
+			return err
+		}
+
+
+		if cli.Node.Hub.ID != msg.ReceivedFrom{
+			return utils.SecurityError("Received message from unexpected peer: " + msg.ReceivedFrom.String())
+		}
+
+		member := resp.Members
+
+		for _,m := range member {
+			if m.AddrInfo.ID == cli.Node.Host.ID() {
+				// Skip self
+				continue
+			}
+			alreadyInList := false
+			for _, member := range cli.Session.Members {
+				if member.PeerID == m.User.PeerID {
+					alreadyInList = true
+					break
+				}
+			}
+			if alreadyInList {
+				// Already in the list
+				continue
+			} else {
+				cli.Session.Members = append(cli.Session.Members, m.User)
+				if err = cli.Node.Host.Connect(cli.Node.Ctx, m.AddrInfo); err != nil {
+					return fmt.Errorf("connect %s failed: %w", m.AddrInfo.ID.String(), err)
+				}
+			}
+		}
+		
+	}
 
 }
 /*

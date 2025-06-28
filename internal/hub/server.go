@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"hillside/internal/models"
+	"hillside/internal/p2p"
 	"hillside/internal/utils"
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -27,7 +29,9 @@ type HubServer struct {
 	Host  host.Host
 	DHT   *dht.IpfsDHT
 	Store *HubStore
+	PS *pubsub.PubSub
 	mu    sync.Mutex
+	topicCache map[string]*pubsub.Topic
 }
 
 func NewHubServer(ctx context.Context, listenAddr string) (*HubServer, error) {
@@ -58,7 +62,10 @@ func NewHubServer(ctx context.Context, listenAddr string) (*HubServer, error) {
 	}
 
 	log.Printf("[HUB] DHT bootstrap completed")
-
+	ps, err := pubsub.NewGossipSub(ctx, h)
+	if err != nil {
+		return nil,err
+	}
 	// In-memory store
 	st := NewHubStore()
 	log.Printf("[HUB] Hub store initialized")
@@ -68,6 +75,8 @@ func NewHubServer(ctx context.Context, listenAddr string) (*HubServer, error) {
 		Host:  h,
 		DHT:   dhtNode,
 		Store: st,
+		PS: ps,
+		topicCache: make(map[string]*pubsub.Topic),
 	}
 
 	/*
@@ -100,6 +109,11 @@ func (s *HubServer) ListenAddrs() {
 	}
 }
 
+var env struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+}
+
 // handleRPC is invoked for every incoming stream on HubProtocolID.
 // It expects a JSON envelope {method, params} and returns the JSON-encoded response.
 func (s *HubServer) handleRPC(stream network.Stream) {
@@ -115,10 +129,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 	encoder := json.NewEncoder(stream)
 
 	// 1) read envelope
-	var env struct {
-		Method string          `json:"method"`
-		Params json.RawMessage `json:"params"`
-	}
+
 	if err := decoder.Decode(&env); err != nil {
 		log.Printf("[HUB] RPC ERROR: Failed to decode envelope from %s: %v",
 			remotePeer.String(), err)
@@ -347,6 +358,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 			},
 			User: req.Sender,
 		}
+		go s.AdvertiseNewcomers(room, req.ServerID)
 	
 	case "ListRoomMembers":
 		var req models.ListRoomMembersRequest
@@ -377,4 +389,47 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 		env.Method, duration, remotePeer.String())
 }
 
+func (s *HubServer) AdvertiseNewcomers(room *models.RoomMeta, serverID string) error {
 
+	if room == nil {
+		log.Printf("[HUB] ERROR: Room not found", )
+		return fmt.Errorf("room not found")
+	}
+	if room.Members == nil {
+		log.Printf("[HUB] ERROR: Room %s in server %s has nil members", room.ID, serverID)
+		return fmt.Errorf("room %s in server %s has nil members", room.ID, serverID)
+	}
+    targets := room.Members
+	MemberTopic := p2p.MembersTopic(serverID, room.ID)
+	s.mu.Lock()
+    top, ok := s.topicCache[MemberTopic]
+    if !ok {
+        var err error
+        top, err = s.PS.Join(MemberTopic)
+        if err != nil {
+            s.mu.Unlock()
+            log.Printf("[HUB] ERROR: Failed to join Members topic %s: %v", MemberTopic, err)
+            return err
+        }
+        s.topicCache[MemberTopic] = top
+    }
+    s.mu.Unlock()
+	var resp models.ListRoomMembersResponse
+	resp.Members = make([]models.Member, 0, len(targets))
+	for _, member := range targets {
+		resp.Members = append(resp.Members, member)
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		log.Printf("[HUB] ERROR: Failed to marshal ListRoomMembersResponse: %v", err)
+		return err
+	}
+	err = top.Publish(s.Ctx, data)
+	if err != nil {
+		log.Printf("[HUB] ERROR: Failed to publish Members update to topic %s: %v", MemberTopic, err)
+		return err
+	}
+	log.Printf("[HUB] Advertised newcomers in room %s of server %s to topic %s",
+		room.ID, serverID, MemberTopic)
+	return nil
+}

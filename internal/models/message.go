@@ -70,7 +70,7 @@ func (RekeyMessage) Type() MessageType { return MsgTypeRekey }
 type Envelope struct {
     Type      MessageType     `json:"type"`
     Sender    User            `json:"sender"`
-    Timestamp int64           `json:"timestamp"` // unix nano
+    Timestamp int64           `json:"timestamp"` // unix micro
 	Signature []byte         `json:"signature"` // signature of the payload
     Payload   json.RawMessage `json:"payload"`
 }
@@ -89,7 +89,7 @@ func Marshal(msg Message, sender User, sigPK *mode2.PrivateKey) ([]byte, error) 
     env := Envelope{
         Type:      msg.Type(),
         Sender:    sender,
-        Timestamp: time.Now().UnixNano(),
+        Timestamp: time.Now().UnixMicro(),
         Signature: sig,
         Payload:   payload,
     }

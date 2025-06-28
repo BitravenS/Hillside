@@ -33,6 +33,11 @@ func RekeyTopic(sid, rid string) string {
     return fmt.Sprintf("%s/servers/%s/rooms/%s/rekey", topicRoot, sid, rid)
 }
 
+// Topic to keep room members updated
+func MembersTopic(sid, rid string) string {
+    return fmt.Sprintf("%s/servers/%s/rooms/%s/members", topicRoot, sid, rid)
+}
+
 // Topic to allow late joiners to request past ciphertexts
 func HistoryReqTopic(sid, rid string) string {
     return fmt.Sprintf("%s/servers/%s/rooms/%s/history/req", topicRoot, sid, rid)

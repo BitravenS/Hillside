@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"hillside/internal/hub"
-
 	libp2p "github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -16,11 +14,12 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
-var protocolID = hub.HubProtocolID
+const protocolID = "/hillside/hub/1.0.0"
 
 type Topics struct {
 	RekeyTopic *pubsub.Topic
 	ChatTopic  *pubsub.Topic
+	MembersTopic *pubsub.Topic
 }
 
 type Node struct {
