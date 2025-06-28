@@ -52,3 +52,13 @@ func HistoryRespTopic(sid, rid, pid string) string {
 func TypingTopic(sid, rid string) string {
     return fmt.Sprintf("%s/servers/%s/rooms/%s/typing", topicRoot, sid, rid)
 }
+
+// Topic for catch-up requests when a user joins a room to get the RoomRatchet
+func CatchUpRequestTopic(sid, rid string) string {
+    return fmt.Sprintf("%s/servers/%s/rooms/%s/catchup/request", topicRoot, sid, rid)
+}
+
+// Topic for catch-up responses containing the RoomRatchet encrypted with the user's key
+func CatchUpResponseTopic(sid, rid string) string {
+    return fmt.Sprintf("%s/servers/%s/rooms/%s/catchup/response", topicRoot, sid, rid)
+}

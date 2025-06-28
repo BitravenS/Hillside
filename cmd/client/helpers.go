@@ -9,6 +9,10 @@ import (
 	"hillside/internal/utils"
 	"os"
 
+	"github.com/cloudflare/circl/kem"
+	"github.com/cloudflare/circl/kem/kyber/kyber1024"
+	"github.com/cloudflare/circl/sign/dilithium/mode2"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"golang.org/x/crypto/argon2"
 	chacha "golang.org/x/crypto/chacha20poly1305"
 )
@@ -178,7 +182,74 @@ func saveEncryptedSID(sid string, password string) error {
 }
 
 
+func (cli *Client) requestCatchUp() (*models.CatchUpResponse, error) {
+	if cli.Session == nil || cli.Session.Room == nil {
+		return nil, fmt.Errorf("no room joined, cannot request catch-up")
+	}
+	var resp models.CatchUpResponse
+	err := cli.Node.SendRPC("CatchUp", models.CatchUpRequest{}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	return &resp, nil
+}
 
+func (cli *Client) responseCatchUp(ps *pubsub.Message, top *pubsub.Topic) error {
+	if cli.Session == nil || cli.Session.Room == nil {
+		return fmt.Errorf("no room joined, cannot process catch-up response")
+	}
+	var resp models.CatchUpResponse
+	var ct []byte
+	var kyberPub kem.PublicKey
+	rat := cli.Session.BackupRatchet
+	var reqPub []byte
+	senderID := ps.ReceivedFrom
+	env, message, err := models.UnmarshalEnvelope(ps.Data)
+	if err != nil {
+		resp.Error = fmt.Sprintf("security validation failed: %s", err)
+		goto send
+	}
+	if err := cli.validateMessageSecurity(env, senderID); err != nil {
+		resp.Error = fmt.Sprintf("security validation failed: %s", err)
+		goto send
+	}
+	if message.Type() != models.MsgTypeCatchUpResp {
+		resp.Error = fmt.Sprintf("expected CatchUpResponse, got %s", message.Type())
+		goto send
+	}
+	reqPub = env.Sender.KyberPub
+	kyberPub, err = kyber1024.Scheme().UnmarshalBinaryPublicKey(reqPub)
+	if err != nil {
+		resp.Error = fmt.Sprintf("failed to unmarshal kyber public key: %s", err)
+		goto send
+	}
+	ct, _, err = kyber1024.Scheme().EncapsulateDeterministically(kyberPub, rat.ChainKey)
+	if err != nil {
+		resp.Error = fmt.Sprintf("failed to encapsulate key: %s", err)
+		goto send
+	}
+	resp.EncState = ct
+	resp.ChainIndex = rat.Index
+	send:
+		priv, ok := cli.Keybag.DilithiumPriv.(*mode2.PrivateKey)
+		if !ok {
+			return fmt.Errorf("invalid type for DilithiumPriv, expected *mode2.PrivateKey")
+		}
+		data, marshalErr := models.Marshal(resp, *cli.User, priv)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		err = top.Publish(cli.Node.Ctx, data)
+		if err != nil {
+			return fmt.Errorf("failed to publish catch-up response: %s", err)
+		}
+		top.Close()
+
+	return nil
+}
 
 func (cli *Client) Shutdown() error {
 	if cli.Node.Host != nil {

@@ -390,7 +390,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 }
 
 func (s *HubServer) AdvertiseNewcomers(room *models.RoomMeta, serverID string) error {
-
+	// TODO: Encrypt the members list before publishing
 	if room == nil {
 		log.Printf("[HUB] ERROR: Room not found", )
 		return fmt.Errorf("room not found")

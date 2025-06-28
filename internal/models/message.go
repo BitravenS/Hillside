@@ -16,6 +16,8 @@ const (
     MsgTypeJoin    MessageType = "join"
     MsgTypeLeave   MessageType = "leave"
     MsgTypeRekey   MessageType = "rekey"
+    MsgTypeCatchUpReq MessageType = "catchup_req"
+    MsgTypeCatchUpResp MessageType = "catchup_resp"
     // … add more as needed
 )
 
@@ -59,12 +61,24 @@ func (LeaveMessage) Type() MessageType { return MsgTypeLeave }
 type RekeyMessage struct {
     Entries []RekeyEntry `json:"entries"`
 }
+
 type RekeyEntry struct {
     PeerID string `json:"peer_id"`
     Ciph   []byte `json:"ciphertext"`
 }
 
 func (RekeyMessage) Type() MessageType { return MsgTypeRekey }
+
+type CatchUpRequest struct {}
+func (CatchUpRequest) Type() MessageType { return MsgTypeCatchUpReq }
+
+type CatchUpResponse struct {
+    EncState []byte `json:"room_ratchet"` // encrypted with the user's key
+    ChainIndex uint64 `json:"chain_index"`
+    Error      string `json:"error,omitempty"` // if any error occurred during catch-up
+}
+func (CatchUpResponse) Type() MessageType { return MsgTypeCatchUpResp }
+
 
 // Envelope wraps any Message with metadata
 type Envelope struct {
@@ -115,6 +129,12 @@ func UnmarshalEnvelope(data []byte) (*Envelope, Message, error) {
         msg = m
     case MsgTypeRekey:
         m := new(RekeyMessage)
+        msg = m
+    case MsgTypeCatchUpReq:
+        m := new(CatchUpRequest)
+        msg = m
+    case MsgTypeCatchUpResp:
+        m := new(CatchUpResponse)
         msg = m
     default:
         return &env, nil, fmt.Errorf("unknown message type: %s", env.Type)

@@ -20,6 +20,7 @@ type Topics struct {
 	RekeyTopic *pubsub.Topic
 	ChatTopic  *pubsub.Topic
 	MembersTopic *pubsub.Topic
+	CatchUpTopic *pubsub.Topic
 }
 
 type Node struct {

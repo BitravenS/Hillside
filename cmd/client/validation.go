@@ -31,7 +31,7 @@ func (cli *Client) validateChatMessageIntegrity(env *models.Envelope, msg *model
 }
 
 
-func (cli *Client) validateChatMessageSecurity(env *models.Envelope, msg *models.ChatMessage, senderID peer.ID) error {
+func (cli *Client) validateMessageSecurity(env *models.Envelope, senderID peer.ID) error {
 	if env.Sender.PeerID != senderID.String() {
 		return utils.SecurityError("Sender ID does not match the message sender")
 	}
@@ -62,7 +62,7 @@ func (cli *Client) validateChatMessage(env *models.Envelope, msg *models.ChatMes
 	if err := cli.validateChatMessageIntegrity(env, msg); err != nil {
 		return err
 	}
-	if err := cli.validateChatMessageSecurity(env, msg, senderID); err != nil {
+	if err := cli.validateMessageSecurity(env, senderID); err != nil {
 		return err
 	}
 	return nil
