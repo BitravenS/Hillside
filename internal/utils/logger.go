@@ -23,6 +23,7 @@ func NewRemoteLogger(port int) (*RemoteLogger, error) {
 		Listener: ln,
 	}
 	go rl.acceptClients()
+	rl.Logf("Remote logger started on port %d", port)
 	return rl, nil
 }
 

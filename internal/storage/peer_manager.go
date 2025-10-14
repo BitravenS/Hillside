@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"hillside/internal/models"
-	"hillside/internal/utils"
+	// "hillside/internal/utils"
 )
 
-var RL, _ = utils.NewRemoteLogger(5000)
+// var RL, _ = utils.NewRemoteLogger(5000)
 
 type PeerManager struct {
 	// write queue and worker control
@@ -36,7 +36,7 @@ func NewPeerManager(writeQSize int) *PeerManager {
 		writeBatchSize: 1,
 		writeFlushFreq: 200 * time.Millisecond,
 	}
-	RL.Logf("PeerManager initialized with writeQSize=%d", writeQSize)
+	// RL.Logf("PeerManager initialized with writeQSize=%d", writeQSize)
 	return p
 }
 
@@ -58,7 +58,7 @@ func (p *PeerManager) EnqueueUserEntry(ctx context.Context, user *models.User) e
 		ctx:    ctx,
 		result: make(chan error, 1),
 	}
-	RL.Logf("Enqueueing user: %v", user.PeerID)
+	// RL.Logf("Enqueueing user: %v", user.PeerID)
 
 	select {
 	case p.writeQ <- req:
@@ -78,15 +78,15 @@ func (p *PeerManager) peerWriteWorker(store *Store) {
 		if len(batch) == 0 {
 			return
 		}
-		RL.Logf("Flushing %d users", len(batch))
+		// RL.Logf("Flushing %d users", len(batch))
 		for _, r := range batch {
 			_ = r.ctx // currently unused, but could use store.WithContext
 			if err := store.SaveUser(context.Background(), r.user); err != nil {
-				RL.Logf("history: save user error: %v", err)
+				// RL.Logf("history: save user error: %v", err)
 				log.Printf("history: save envelope error:\n %v", err)
 				r.result <- err
 			} else {
-				RL.Logf("Saved user: %v", r.user.PeerID)
+				// RL.Logf("Saved user: %v", r.user.PeerID)
 				r.result <- nil
 			}
 			close(r.result)
@@ -110,6 +110,7 @@ func (p *PeerManager) peerWriteWorker(store *Store) {
 				}
 			}
 		case req := <-p.writeQ:
+			// RL.Logf("Dequeued user: %v", req.user.PeerID)
 			batch = append(batch, req)
 			if len(batch) >= p.writeBatchSize {
 				flush()

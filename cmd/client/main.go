@@ -54,7 +54,7 @@ func main() {
 		Ctx: ctx,
 	}
 	client.Node = node
-	rl, err := utils.NewRemoteLogger(6000)
+	rl, err := utils.NewRemoteLogger(4567)
 	if err != nil {
 		log.Printf("Failed to start remote logger: %v", err)
 	}

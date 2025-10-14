@@ -17,6 +17,7 @@ import (
 const protocolID = "/hillside/hub/1.0.0"
 
 type Topics struct {
+	ServersTopic    *pubsub.Topic
 	RekeyTopic      *pubsub.Topic
 	ChatTopic       *pubsub.Topic
 	MembersTopic    *pubsub.Topic

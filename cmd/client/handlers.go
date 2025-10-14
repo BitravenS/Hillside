@@ -33,6 +33,7 @@ func (cli *Client) loginHandler(username string, password string, hub string) {
 	}
 	cli.User = usr
 	cli.Keybag = kb
+	cli.Session.Log.Logf("Loaded profile for user %s", username)
 
 	hubadrr, err := peer.AddrInfoFromString(hub)
 	if err != nil {
@@ -118,7 +119,7 @@ func (cli *Client) createUserHandler(username string, password string, hub strin
 func (cli *Client) SwitchToBrowseScreen(hub string) {
 	cli.UI.BrowseScreen.SetHub(hub)
 	cli.UI.Pages.SwitchToPage("browse")
-	go cli.refreshServerList()
+	go cli.StartAutoRefresh()
 }
 
 func (cli *Client) createServerHandler(request models.CreateServerRequest) (serverID string, err error) {

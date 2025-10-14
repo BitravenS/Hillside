@@ -202,6 +202,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 		if err := encoder.Encode(models.CreateServerResponse{ServerID: sm.ID}); err != nil {
 			log.Printf("[HUB] RPC ERROR: Failed to encode CreateServer response: %v", err)
 		}
+		go s.AdvertiseNewServer()
 
 	case "ListRooms":
 		var req models.ListRoomsRequest
@@ -440,3 +441,50 @@ func (s *HubServer) AdvertiseNewcomers(room *models.RoomMeta, serverID string) e
 	return nil
 }
 
+func (s *HubServer) AdvertiseNewServer() error {
+	serverPtrs := s.Store.ListServers()
+	servers := make([]models.ServerMeta, len(serverPtrs))
+	for i, serverPtr := range serverPtrs {
+		servers[i] = *serverPtr
+	}
+	out := make([]models.ServerMeta, 0)
+	for _, server := range servers {
+		if server.Visibility != models.Private {
+			sanitized := server
+			sanitized.PasswordSalt = nil
+			sanitized.PasswordHash = nil
+			out = append(out, sanitized)
+		}
+	}
+	log.Printf("[HUB] RPC: AdvertiseNewServer returning %d public servers",
+		len(out))
+	resp := models.ListServersResponse{Servers: out}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		log.Printf("[HUB] ERROR: Failed to marshal server metadata: %v", err)
+		return err
+	}
+
+	serversTopic := p2p.ServersTopic()
+	s.mu.Lock()
+	top, ok := s.topicCache[serversTopic]
+	if !ok {
+		top, err = s.PS.Join(serversTopic)
+		if err != nil {
+			s.mu.Unlock()
+			log.Printf("[HUB] ERROR: Failed to join servers topic: %v", err)
+			return err
+		}
+		s.topicCache[serversTopic] = top
+	}
+	s.mu.Unlock()
+
+	if err := top.Publish(s.Ctx, data); err != nil {
+		log.Printf("[HUB] ERROR: Failed to publish new server to topic: %v", err)
+		return err
+	}
+
+	log.Printf("[HUB] Advertised new server to topic %s", serversTopic)
+	return nil
+}
