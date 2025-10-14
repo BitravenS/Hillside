@@ -17,23 +17,24 @@ import (
 const protocolID = "/hillside/hub/1.0.0"
 
 type Topics struct {
-	RekeyTopic *pubsub.Topic
-	ChatTopic  *pubsub.Topic
-	MembersTopic *pubsub.Topic
-	CatchUpTopic *pubsub.Topic
+	RekeyTopic      *pubsub.Topic
+	ChatTopic       *pubsub.Topic
+	MembersTopic    *pubsub.Topic
+	CatchUpTopic    *pubsub.Topic
+	UserUpdateTopic *pubsub.Topic
 }
 
 type Node struct {
 	Host   host.Host
 	DHT    *dht.IpfsDHT
-	PS *pubsub.PubSub
-	Ctx   context.Context
-	PK lib.PrivKey
-	Hub *peer.AddrInfo
+	PS     *pubsub.PubSub
+	Ctx    context.Context
+	PK     lib.PrivKey
+	Hub    *peer.AddrInfo
 	Topics Topics
 }
 
-func (n *Node) InitHost(listenAddrs []string) error{
+func (n *Node) InitHost(listenAddrs []string) error {
 	pk := n.PK
 	host, err := libp2p.New(
 		libp2p.Identity(pk),
@@ -48,10 +49,10 @@ func (n *Node) InitHost(listenAddrs []string) error{
 
 func (n *Node) InitDHT() error {
 	dhtOpts := []dht.Option{
-        dht.Mode(dht.ModeServer),
-        // include the Hub and public IPFS peers as bootstrap
-        dht.BootstrapPeers(*n.Hub),
-    }
+		dht.Mode(dht.ModeServer),
+		// include the Hub and public IPFS peers as bootstrap
+		dht.BootstrapPeers(*n.Hub),
+	}
 	dht, err := dht.New(n.Ctx, n.Host, dhtOpts...)
 	if err != nil {
 		return err
@@ -86,30 +87,31 @@ func (n *Node) InitNode() error {
 	if err := n.InitPubSub(); err != nil {
 		return err
 	}
+
 	return nil
 }
 
 func (n *Node) SendRPC(method string, params interface{}, out interface{}) error {
 	pi := n.Hub
-	
+
 	s, err := n.Host.NewStream(n.Ctx, pi.ID, protocol.ID(protocolID))
-    defer s.Close()
+	defer s.Close()
 
-    // envelope
-    env := struct {
-        Method string      `json:"method"`
-        Params interface{} `json:"params"`
-    }{method, params}
+	// envelope
+	env := struct {
+		Method string      `json:"method"`
+		Params interface{} `json:"params"`
+	}{method, params}
 
-    enc := json.NewEncoder(s)
-    err = enc.Encode(env)
+	enc := json.NewEncoder(s)
+	err = enc.Encode(env)
 	if err != nil {
 		return err
 	}
 
-    rd := bufio.NewReader(s)
-    dec := json.NewDecoder(rd)
-    err = dec.Decode(out)
+	rd := bufio.NewReader(s)
+	dec := json.NewDecoder(rd)
+	err = dec.Decode(out)
 	if err != nil {
 		return err
 	}

@@ -1,27 +1,20 @@
-package p2p
+package storage
 
 import (
 	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
-	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
 	"hillside/internal/models"
-	"hillside/internal/storage"
-	"hillside/internal/utils"
 )
 
-// It serializes writes via a background worker to avoid write contention on sqlite.
 type HistoryManager struct {
-	store storage.Store
-
 	// write queue and worker control
-	writeQ chan writeRequest
+	writeQ chan messageWriteRequest
 	wg     sync.WaitGroup
 	stopCh chan struct{}
 
@@ -33,7 +26,7 @@ type HistoryManager struct {
 	writeFlushFreq time.Duration // max wait before flushing batch
 }
 
-type writeRequest struct {
+type messageWriteRequest struct {
 	raw      []byte
 	env      *models.Envelope
 	chain    *uint64
@@ -44,12 +37,11 @@ type writeRequest struct {
 }
 
 // NewHistoryManager returns a ready-to-start history manager.
-// store: your SQLite or PG store implementing storage.Store.
+// store: your SQLite or PG store implementing Store.
 // writeQSize: buffered channel size for incoming writes.
-func NewHistoryManager(store storage.Store, writeQSize int) *HistoryManager {
+func NewHistoryManager(writeQSize int) *HistoryManager {
 	h := &HistoryManager{
-		store:          store,
-		writeQ:         make(chan writeRequest, writeQSize),
+		writeQ:         make(chan messageWriteRequest, writeQSize),
 		stopCh:         make(chan struct{}),
 		lastIndex:      make(map[string]uint64),
 		writeBatchSize: 50,
@@ -58,50 +50,18 @@ func NewHistoryManager(store storage.Store, writeQSize int) *HistoryManager {
 	return h
 }
 
-func InitHistoryManager(username string, dbPath string, writeQSize int) (*HistoryManager, error) {
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-	filldbPath := homeDir + "/.hillside/" + fmt.Sprintf("hillside_data_%s.db", username)
-
-	if dbPath != "" {
-		filldbPath = dbPath
-	}
-	_, err = os.Stat(homeDir + "/.hillside/")
-	if os.IsNotExist(err) {
-		return nil, utils.HistoryDBNotFound
-	}
-	store, err := storage.NewSQLiteStore(filldbPath)
-	if err != nil {
-		return nil, fmt.Errorf("init storage: %w", err)
-	}
-	if err := store.Migrate(); err != nil {
-		store.Close()
-		return nil, err
-	}
-	h := NewHistoryManager(*store, writeQSize)
-	h.Start()
-	return h, nil
-}
-
 // Start launches the background writer. Call Stop() to cleanly shut down.
-func (h *HistoryManager) Start() {
+func (h *HistoryManager) Start(store *Store) {
 	h.wg.Add(1)
-	go h.writeWorker()
+	go h.writeWorker(store)
 }
 
 // Stop stops worker and waits for it to finish. It blocks until writer drained.
 func (h *HistoryManager) Stop() {
 	close(h.stopCh)
 	h.wg.Wait()
-	// close the store if needed
-	h.store.Close()
 }
 
-// EnqueueEnvelope accepts raw envelope bytes, verifies/unmarshals, and queues for storage.
-// It returns immediately (non-blocking) if the write queue is full (error), or nil if enqueued.
 func (h *HistoryManager) EnqueueEnvelope(ctx context.Context, raw []byte, env *models.Envelope, msg models.Message, roomID string, serverID string) error {
 	var chainIdx uint64
 	switch env.Type {
@@ -112,7 +72,7 @@ func (h *HistoryManager) EnqueueEnvelope(ctx context.Context, raw []byte, env *m
 		// control messages may carry room info in payload; leave roomID empty here
 	}
 
-	req := writeRequest{
+	req := messageWriteRequest{
 		raw:      raw,
 		env:      env,
 		chain:    &chainIdx,
@@ -133,9 +93,9 @@ func (h *HistoryManager) EnqueueEnvelope(ctx context.Context, raw []byte, env *m
 }
 
 // writeWorker batches writes into the DB to limit transactions and contention.
-func (h *HistoryManager) writeWorker() {
+func (h *HistoryManager) writeWorker(store *Store) {
 	defer h.wg.Done()
-	batch := make([]writeRequest, 0, h.writeBatchSize)
+	batch := make([]messageWriteRequest, 0, h.writeBatchSize)
 	flushTimer := time.NewTimer(h.writeFlushFreq)
 	defer flushTimer.Stop()
 
@@ -143,12 +103,9 @@ func (h *HistoryManager) writeWorker() {
 		if len(batch) == 0 {
 			return
 		}
-		// perform writes one by one (store inserts are idempotent).
-		// If your store supports transactions/batch insert, prefer that.
 		for _, r := range batch {
 			_ = r.ctx // currently unused, but could use store.WithContext
-			// If roomID empty, you may need to reach into payload/decrypt; for simplicity, pass empty
-			if err := h.store.SaveEnvelope(context.Background(), r.raw, r.env, r.chain, r.roomID, r.serverID); err != nil {
+			if err := store.SaveEnvelope(context.Background(), r.raw, r.env, r.chain, r.roomID, r.serverID); err != nil {
 				log.Printf("history: save envelope error: %v", err)
 				r.result <- err
 			} else {
@@ -206,14 +163,14 @@ func (h *HistoryManager) setLastIndex(room string, idx uint64) {
 }
 
 // GetLastIndex returns cached last chain index if available, else ErrNoRows.
-func (h *HistoryManager) GetLastIndex(room string) (uint64, error) {
+func (h *HistoryManager) GetLastIndex(room string, store *Store) (uint64, error) {
 	h.lastIndexMu.RLock()
 	defer h.lastIndexMu.RUnlock()
 	if v, ok := h.lastIndex[room]; ok {
 		return v, nil
 	}
 	// fallback to DB
-	idx, err := h.store.GetLatestChainIndex(context.Background(), room)
+	idx, err := store.GetLatestChainIndex(context.Background(), room)
 	if err != nil {
 		return 0, err
 	}
@@ -223,25 +180,19 @@ func (h *HistoryManager) GetLastIndex(room string) (uint64, error) {
 }
 
 // BuildCatchUpPayload will fetch messages since `sinceIndex`, compress them to a gzipped
-// blob, and return the blob and the last chain index included. It does NOT encrypt the blob.
-// Caller should encrypt blob with recipient's public key or symmetric key before sending.
-func (h *HistoryManager) BuildCatchUpPayload(ctx context.Context, roomID string, sinceIndex uint64, limit int) (payload []byte, lastIndex uint64, err error) {
-	msgs, err := h.store.GetMessagesSinceChainIndex(ctx, roomID, sinceIndex, limit)
+func (h *HistoryManager) BuildCatchUpPayload(ctx context.Context, roomID string, sinceIndex uint64, limit int, store *Store) (payload []byte, lastIndex uint64, err error) {
+	msgs, err := store.GetMessagesSinceChainIndex(ctx, roomID, sinceIndex, limit)
 	if err != nil {
 		return nil, 0, err
 	}
 	if len(msgs) == 0 {
-		// no messages
-		latest, _ := h.GetLastIndex(roomID)
+		latest, _ := h.GetLastIndex(roomID, store)
 		return nil, latest, nil
 	}
 
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	for _, m := range msgs {
-		// write length-prefixed raw signature so the receiver can decode stream
-		// Format: 8-byte big-endian length + envelope bytes
-		// (simple framing to support concatenated envelopes)
 		if err := writeFrame(gw, m.Signature); err != nil {
 			_ = gw.Close()
 			return nil, 0, err
@@ -258,22 +209,6 @@ func (h *HistoryManager) BuildCatchUpPayload(ctx context.Context, roomID string,
 }
 
 // Helper: write framed signature into gzip writer (8-byte length + data)
-func writeFrame(w *gzip.Writer, data []byte) error {
-	// length prefix (uint64 BE)
-	var lenBuf [8]byte
-	l := uint64(len(data))
-	for i := 7; i >= 0; i-- {
-		lenBuf[i] = byte(l & 0xff)
-		l >>= 8
-	}
-	if _, err := w.Write(lenBuf[:]); err != nil {
-		return err
-	}
-	if _, err := w.Write(data); err != nil {
-		return err
-	}
-	return nil
-}
 
 /*
 func (h *HistoryManager) BuildEncryptedCatchUpResponse(ctx context.Context, roomID string, sinceIndex uint64, limit int, recipientPubKey []byte) (encPayload []byte, lastIndex uint64, err error) {

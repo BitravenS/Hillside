@@ -1,39 +1,37 @@
 package main
 
 import (
-	"hillside/internal/models"
+	"fmt"
 	"os"
+
+	"hillside/internal/models"
 
 	"github.com/rivo/tview"
 )
 
 type UIConfig struct {
-	Theme *Theme
-	loginHandler func(username, password string, hub string)
-	createUserHandler func(username, password string, hub string)
+	Theme               *Theme
+	loginHandler        func(username, password string, hub string)
+	createUserHandler   func(username, password string, hub string)
 	createServerHandler func(request models.CreateServerRequest) (sid string, err error)
-	joinServerHandler func(serverID string, pass string) error
-	getServerName func() string
-	getRoomName func() string
-	getServerId func() string
-	createRoomHandler func(req models.CreateRoomRequest) (string, error)
-	joinRoomHandler func(roomID string, pass string) error
-	sendMessageHandler func(message string) error
+	joinServerHandler   func(serverID string, pass string) error
+	getServerName       func() string
+	getRoomName         func() string
+	getServerId         func() string
+	createRoomHandler   func(req models.CreateRoomRequest) (string, error)
+	joinRoomHandler     func(roomID string, pass string) error
+	sendMessageHandler  func(message string) error
 }
 
-
-
 type UI struct {
-	App *tview.Application
+	App   *tview.Application
 	Theme *Theme
 	Pages *tview.Pages
 
 	// Screens
-	LoginScreen *LoginScreen
+	LoginScreen  *LoginScreen
 	BrowseScreen *BrowseScreen
-	ChatScreen *ChatScreen
-
-
+	ChatScreen   *ChatScreen
 }
 
 func NewUI(cfg *UIConfig) *UI {
@@ -54,13 +52,12 @@ func NewUI(cfg *UIConfig) *UI {
 	tview.Borders.BottomLeft = ' '
 	tview.Borders.BottomRight = ' '
 
-
-
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
+		fmt.Println("Failed to get user home directory: " + err.Error())
 		panic(err)
 	}
-	DefaultTheme, err := LoadTheme(homeDir+ "/.hillside/default_theme.yaml")
+	DefaultTheme, err := LoadTheme(homeDir + "/.hillside/default_theme.yaml")
 	if err != nil {
 		panic("Failed to load default theme: " + err.Error())
 	}
@@ -68,48 +65,44 @@ func NewUI(cfg *UIConfig) *UI {
 		cfg.Theme = DefaultTheme
 	}
 	ui := &UI{
-		App: app,
+		App:   app,
 		Theme: cfg.Theme,
-
 	}
 
 	tview.Styles.PrimitiveBackgroundColor = ui.Theme.GetColor("background")
 	tview.Styles.TitleColor = ui.Theme.GetColor("primary")
 
 	ui.LoginScreen = &LoginScreen{
-		UI: ui,
-		Hub: "",
-		loginHandler: cfg.loginHandler,
-		createUserHandler: cfg.createUserHandler,}
+		UI:                ui,
+		Hub:               "",
+		loginHandler:      cfg.loginHandler,
+		createUserHandler: cfg.createUserHandler}
 	ui.LoginScreen.NewLoginScreen()
 	ui.BrowseScreen = &BrowseScreen{
-		UI: ui,
-		Hub: "",
+		UI:             ui,
+		Hub:            "",
 		OnCreateServer: cfg.createServerHandler,
-		OnJoinServer: cfg.joinServerHandler,
+		OnJoinServer:   cfg.joinServerHandler,
 	}
 	ui.BrowseScreen.NewBrowseScreen()
 
 	ui.ChatScreen = &ChatScreen{
-		UI: ui,
+		UI:            ui,
 		GetServerName: cfg.getServerName,
-		GetRoomName: cfg.getRoomName,
-		GetServerId: cfg.getServerId,
-		OnCreateRoom: cfg.createRoomHandler,
-		OnJoinRoom: cfg.joinRoomHandler,
-		sendMessage: cfg.sendMessageHandler,
+		GetRoomName:   cfg.getRoomName,
+		GetServerId:   cfg.getServerId,
+		OnCreateRoom:  cfg.createRoomHandler,
+		OnJoinRoom:    cfg.joinRoomHandler,
+		sendMessage:   cfg.sendMessageHandler,
 	}
 	ui.ChatScreen.NewChatScreen()
 
 	ui.Pages = tview.NewPages().
-	AddPage("login", ui.LoginScreen.layout, true, true).
-	AddPage("browse", ui.BrowseScreen.layout, true, false).
-	AddPage("chat", ui.ChatScreen.layout, true, false)
-
-
+		AddPage("login", ui.LoginScreen.layout, true, true).
+		AddPage("browse", ui.BrowseScreen.layout, true, false).
+		AddPage("chat", ui.ChatScreen.layout, true, false)
 
 	ui.App.SetRoot(ui.Pages, true).
 		SetFocus(ui.LoginScreen.form)
 	return ui
 }
-

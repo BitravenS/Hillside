@@ -17,7 +17,6 @@ import (
 	chacha "golang.org/x/crypto/chacha20poly1305"
 )
 
-
 func (cli *Client) requestServers() (*models.ListServersResponse, error) {
 	var listResp models.ListServersResponse
 	err := cli.Node.SendRPC("ListServers", models.ListServersRequest{}, &listResp)
@@ -134,7 +133,6 @@ func (cli *Client) requestListRoomMembers() (*models.ListRoomMembersResponse, er
 	return &resp, nil
 }
 
-
 func saveEncryptedSID(sid string, password string) error {
 	// Encrypt the SID with the password
 
@@ -162,16 +160,16 @@ func saveEncryptedSID(sid string, password string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	defer file.Close()
 	data := struct {
-		Salt []byte `json:"salt"`
+		Salt  []byte `json:"salt"`
 		Nonce []byte `json:"nonce"`
-		SID []byte `json:"sid"`
+		SID   []byte `json:"sid"`
 	}{
-		Salt: salt,
+		Salt:  salt,
 		Nonce: n,
-		SID: encryptedSID,
+		SID:   encryptedSID,
 	}
 	enc := json.NewEncoder(file)
 	enc.SetIndent("", "  ")
@@ -181,8 +179,7 @@ func saveEncryptedSID(sid string, password string) error {
 	return nil
 }
 
-
-func (cli *Client) requestCatchUp() (*models.CatchUpResponse, error) {
+func (cli *Client) requestCatchUp(since, limit uint64) (*models.CatchUpResponse, error) {
 	if cli.Session == nil || cli.Session.Room == nil {
 		return nil, fmt.Errorf("no room joined, cannot request catch-up")
 	}
@@ -233,20 +230,20 @@ func (cli *Client) responseCatchUp(ps *pubsub.Message, top *pubsub.Topic) error 
 	}
 	resp.EncState = ct
 	resp.ChainIndex = rat.Index
-	send:
-		priv, ok := cli.Keybag.DilithiumPriv.(*mode2.PrivateKey)
-		if !ok {
-			return fmt.Errorf("invalid type for DilithiumPriv, expected *mode2.PrivateKey")
-		}
-		data, marshalErr := models.Marshal(resp, *cli.User, priv)
-		if marshalErr != nil {
-			return marshalErr
-		}
-		err = top.Publish(cli.Node.Ctx, data)
-		if err != nil {
-			return fmt.Errorf("failed to publish catch-up response: %s", err)
-		}
-		top.Close()
+send:
+	priv, ok := cli.Keybag.DilithiumPriv.(*mode2.PrivateKey)
+	if !ok {
+		return fmt.Errorf("invalid type for DilithiumPriv, expected *mode2.PrivateKey")
+	}
+	data, marshalErr := models.Marshal(resp, *cli.User, priv)
+	if marshalErr != nil {
+		return marshalErr
+	}
+	err = top.Publish(cli.Node.Ctx, data)
+	if err != nil {
+		return fmt.Errorf("failed to publish catch-up response: %s", err)
+	}
+	top.Close()
 
 	return nil
 }
@@ -266,10 +263,21 @@ func (cli *Client) Shutdown() error {
 		_ = cli.Node.Topics.RekeyTopic.Close()
 	}
 	// Add any other topics that need to be closed
-	
+
 	if cli.Node.Ctx != nil {
 		cli.Node.Ctx.Done() // cancel the context
 	}
 
 	return nil
+
 }
+
+/*
+func (t *Topics) PublishToRoom(ctx context.Context, topicName string, data []byte) error {
+	topic, err := t.Pubsub.Join(topicName)
+	if err != nil {
+		return err
+	}
+	return topic.Publish(ctx, data)
+}
+*/

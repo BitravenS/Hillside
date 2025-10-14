@@ -7,16 +7,16 @@ import (
 
 type LoginScreen struct {
 	*UI
-	layout        *tview.Flex
-	form		  *tview.Form
-	loginHandler func(username, password string, hub string)
+	layout            *tview.Flex
+	form              *tview.Form
+	loginHandler      func(username, password string, hub string)
 	createUserHandler func(username, password string, hub string)
-	Username	  string
-	Password	  string
-	Hub		  string
+	Username          string
+	Password          string
+	Hub               string
 }
 
-var Ascii string = `
+var ASCII string = `
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣠⣤⣤⣄⣀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                                                                                     
 ⠀⠀⠀⠀⠀⠀⠀⣀⡴⠾⠛⠋⠉⠉⠁⠈⠉⠉⠙⠛⠷⢦⣄⠀⠀⠀⠀⠀⠀⠀                                                                                     
 ⠀⠀⠀⠀⢀⣴⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠻⣦⡀⠀⠀⠀⠀                                                                                     
@@ -33,7 +33,7 @@ var Ascii string = `
 ⠀⠀⠀⠀⠀⠀⠈⠙⠶⣤⣄⣀⡀⠀⠀⠀⠀⢀⣀⣠⣤⠶⠋⠁⠀⠀⠀⠀⠀⠀                                                                                     
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠛⠛⠛⠛⠛⠛⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                                                                                     
 `
-var AsciiMin string = `
+var ASCIIMin string = `
    ▄█    █▄     ▄█   ▄█        ▄█          ▄████████  ▄█  ████████▄     ▄████████
   ███    ███   ███  ███       ███         ███    ███ ███  ███   ▀███   ███    ███
   ███    ███   ███▌ ███       ███         ███    █▀  ███▌ ███    ███   ███    █▀ 
@@ -44,46 +44,46 @@ var AsciiMin string = `
   ███    █▀    █▀   █████▄▄██ █████▄▄██  ▄████████▀  █▀   ████████▀    ██████████
                     ▀         ▀                                                  
 `
+
 func (l *LoginScreen) NewLoginScreen() {
 	l.layout = tview.NewFlex()
 	l.layout.SetDirection(tview.FlexRow).
-	SetBorder(false)
-	_,_,width,_ := l.layout.GetRect()
+		SetBorder(false)
+	_, _, width, _ := l.layout.GetRect()
 	var header string
 	if width < 60 {
-		header = AsciiMin
+		header = ASCIIMin
 	} else {
-		header = Ascii
+		header = ASCII
 	}
 
 	headerStyle := tcell.StyleDefault.
-		Foreground(l.Theme.GetColor("accent")).
+		Foreground(l.Theme.GetColor("orange")).
 		Background(l.Theme.GetColor("background"))
 
-    asciiTextView := tview.NewTextView().
-        SetText(header).
-        SetTextAlign(tview.AlignCenter)
+	asciiTextView := tview.NewTextView().
+		SetText(header).
+		SetTextAlign(tview.AlignCenter)
 	asciiTextView.SetTextStyle(headerStyle)
 
-    asciiContainer := tview.NewFlex().
-        SetDirection(tview.FlexRow).
-        AddItem(nil, 0, 1, false).              // Top spacer
-        AddItem(asciiTextView, 9, 0, false).    // ASCII art
-        AddItem(nil, 0, 1, false)              // Bottom spacer
+	asciiContainer := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).           // Top spacer
+		AddItem(asciiTextView, 9, 0, false). // ASCII art
+		AddItem(nil, 0, 1, false)            // Bottom spacer
 
-
-    l.layout.AddItem(asciiContainer, 0,2, false)
+	l.layout.AddItem(asciiContainer, 0, 2, false)
 
 	l.form = tview.NewForm()
-    bgColor, fieldBg, buttonBg, buttonText, fieldText := l.Theme.FormColors()
-    l.form.SetBackgroundColor(bgColor)
-    l.form.SetButtonBackgroundColor(buttonBg)
-    l.form.SetButtonTextColor(buttonText)
-    l.form.SetFieldBackgroundColor(fieldBg)
-    l.form.SetFieldTextColor(fieldText)
-    l.form.SetLabelColor(l.Theme.GetColor("primary"))
+	bgColor, fieldBg, buttonBg, buttonText, fieldText := l.Theme.FormColors()
+	l.form.SetBackgroundColor(bgColor)
+	l.form.SetButtonBackgroundColor(buttonBg)
+	l.form.SetButtonTextColor(buttonText)
+	l.form.SetFieldBackgroundColor(fieldBg)
+	l.form.SetFieldTextColor(fieldText)
+	l.form.SetLabelColor(l.Theme.GetColor("primary"))
 	l.form.SetBorder(true)
-    l.form.SetBorderColor(l.Theme.GetColor("border"))
+	l.form.SetBorderColor(l.Theme.GetColor("border"))
 	l.form.SetBorderAttributes(tcell.AttrNone)
 	l.form.SetButtonsAlign(tview.AlignCenter)
 
@@ -112,13 +112,10 @@ func (l *LoginScreen) NewLoginScreen() {
 
 	formContainer := tview.NewFlex().
 		SetDirection(tview.FlexColumn).
-		AddItem(nil, 0, 1, false).              // Left spacer
-		AddItem(l.form, 0, 2, true).             // Form
-		AddItem(nil, 0, 1, false)                // Right spacer
+		AddItem(nil, 0, 1, false).   // Left spacer
+		AddItem(l.form, 0, 2, true). // Form
+		AddItem(nil, 0, 1, false)    // Right spacer
 	l.layout.AddItem(nil, 0, 1, false)
 	l.layout.AddItem(formContainer, 0, 2, true).SetBorder(false)
-
-
-
 
 }

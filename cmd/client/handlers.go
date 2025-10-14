@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"hillside/internal/models"
 	"hillside/internal/p2p"
 	"hillside/internal/profile"
+	"hillside/internal/storage"
 	"hillside/internal/utils"
-	"log"
 
 	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/sign/dilithium/mode2"
@@ -18,21 +19,16 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	chacha "golang.org/x/crypto/chacha20poly1305"
 )
-type loginSession struct {
-	Username string
-	Password string
-	Path string
-}
 
 func (cli *Client) loginHandler(username string, password string, hub string) {
 
 	if username == "" || password == "" {
-		cli.UI.ShowError("Error", "Username and password cannot be empty","OK", 0, nil)
+		cli.UI.ShowError("Error", "Username and password cannot be empty", "OK", 0, nil)
 		return
 	}
-	kb,usr, err := profile.LoadProfile(username, password, "")
+	kb, usr, err := profile.LoadProfile(username, password, "")
 	if err != nil {
-			cli.UI.ShowError("Login failed", err.Error(), "Retry", 0, nil)
+		cli.UI.ShowError("Login failed", err.Error(), "Retry", 0, nil)
 		return
 	}
 	cli.User = usr
@@ -40,17 +36,21 @@ func (cli *Client) loginHandler(username string, password string, hub string) {
 
 	hubadrr, err := peer.AddrInfoFromString(hub)
 	if err != nil {
-		cli.UI.ShowError("Invalid Hub Address", "Failed to parse hub address: "+ err.Error(), "OK", 0, nil)
-		log.Fatalf("Failed to parse hub address: %v", err)
+		cli.UI.ShowError("Invalid Hub Address", "Failed to parse hub address: "+err.Error(), "OK", 0, nil)
 		return
 	}
 	cli.Node.Hub = hubadrr
 
-
 	cli.Node.PK = kb.Libp2pPriv
 
-
 	go func() {
+		db, err := storage.InitSessionDB(username, "", 1024)
+		if err != nil {
+			cli.UI.ShowError("Storage Init Failed", "Failed to initialize storage: "+err.Error(), "OK", 0, nil)
+			return
+		}
+		cli.Session.SessionDB = db
+
 		if err := cli.Node.InitNode(); err != nil {
 			cli.UI.App.QueueUpdateDraw(func() {
 				cli.UI.ShowError("Node init failed", err.Error(), "OK", 0, nil)
@@ -62,14 +62,12 @@ func (cli *Client) loginHandler(username string, password string, hub string) {
 		})
 	}()
 
-	return
-
 }
 
 func (cli *Client) createUserHandler(username string, password string, hub string) {
 
 	if username == "" || password == "" {
-		cli.UI.ShowError("Error", "Username and password cannot be empty","OK", 0, nil)
+		cli.UI.ShowError("Error", "Username and password cannot be empty", "OK", 0, nil)
 		return
 	}
 	_, err := profile.GenerateProfile(username, password)
@@ -77,9 +75,9 @@ func (cli *Client) createUserHandler(username string, password string, hub strin
 		cli.UI.ShowError("Create user failed", err.Error(), "OK", 0, nil)
 		return
 	}
-	kb,usr, err := profile.LoadProfile(username, password, "")
+	kb, usr, err := profile.LoadProfile(username, password, "")
 	if err != nil {
-			cli.UI.ShowError("Login failed", err.Error(), "Retry", 0, nil)
+		cli.UI.ShowError("Login failed", err.Error(), "Retry", 0, nil)
 		return
 	}
 	cli.User = usr
@@ -87,7 +85,7 @@ func (cli *Client) createUserHandler(username string, password string, hub strin
 
 	hubadrr, err := peer.AddrInfoFromString(hub)
 	if err != nil {
-		cli.UI.ShowError("Invalid Hub Address", "Failed to parse hub address: "+ err.Error(), "OK", 0, nil)
+		cli.UI.ShowError("Invalid Hub Address", "Failed to parse hub address: "+err.Error(), "OK", 0, nil)
 		return
 	}
 	cli.Node.Hub = hubadrr
@@ -95,19 +93,26 @@ func (cli *Client) createUserHandler(username string, password string, hub strin
 	cli.Node.PK = kb.Libp2pPriv
 
 	go func() {
+		db, err := storage.InitSessionDB(username, "", 1024)
+		if err != nil {
+			cli.UI.ShowError("Storage Init Failed", "Failed to initialize storage: "+err.Error(), "OK", 0, nil)
+			return
+		}
+		cli.Session.SessionDB = db
+		// cli.UI.ShowError("Storage Success", fmt.Sprintf("db: %p", db), "OK", 0, nil)
+
 		if err := cli.Node.InitNode(); err != nil {
 			cli.UI.App.QueueUpdateDraw(func() {
 				cli.UI.ShowError("Node init failed", err.Error(), "OK", 0, nil)
 			})
 			return
 		}
+
 		cli.UI.App.QueueUpdateDraw(func() {
 			cli.SwitchToBrowseScreen(hub)
 		})
 	}()
 
-
-	return
 }
 
 func (cli *Client) SwitchToBrowseScreen(hub string) {
@@ -121,7 +126,7 @@ func (cli *Client) createServerHandler(request models.CreateServerRequest) (serv
 		return "", utils.CreateServerError("Server name cannot be empty")
 	}
 	if request.Visibility == models.Private && len(request.PasswordHash) == 0 {
-		return "" , utils.CreateServerError("Private servers must have a password")
+		return "", utils.CreateServerError("Private servers must have a password")
 	}
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
@@ -138,10 +143,6 @@ func (cli *Client) createServerHandler(request models.CreateServerRequest) (serv
 	go cli.refreshServerList()
 	return serverID, nil
 }
-
-
-
-
 
 func (cli *Client) createRoomHandler(req models.CreateRoomRequest) (string, error) {
 	if req.RoomName == "" {
@@ -165,14 +166,10 @@ func (cli *Client) createRoomHandler(req models.CreateRoomRequest) (string, erro
 	return resp.RoomID, nil
 }
 
-
-
-
 func (cli *Client) joinServerHandler(serverID string, pass string) error {
 	if serverID == "" {
 		return utils.JoinServerError("Server ID cannot be empty")
 	}
-
 
 	err := cli.requestJoinServer(serverID, pass)
 	if err != nil {
@@ -184,9 +181,6 @@ func (cli *Client) joinServerHandler(serverID string, pass string) error {
 	return nil
 }
 
-
-
-
 func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 	if roomID == "" {
 		return utils.JoinRoomError("Server ID and Room ID cannot be empty")
@@ -195,7 +189,7 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 	if err != nil {
 		return utils.JoinRoomError(err.Error())
 	}
-	
+
 	RekeyTopic := p2p.RekeyTopic(cli.Session.Server.ID, cli.Session.Room.ID)
 	topic, err := cli.Node.PS.Join(RekeyTopic)
 	if err != nil {
@@ -207,9 +201,11 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 		return err
 	}
 
-
 	MembersTopic := p2p.MembersTopic(cli.Session.Server.ID, cli.Session.Room.ID)
 	top, err := cli.Node.PS.Join(MembersTopic)
+	if err != nil {
+		return err
+	}
 	cli.Node.Topics.MembersTopic = top
 	subs, err := cli.Node.Topics.MembersTopic.Subscribe()
 	if err != nil {
@@ -217,12 +213,11 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 	}
 	go cli.refreshMembersList(subs)
 
-	
 	cli.UI.ChatScreen.chatSection.SetTitle(fmt.Sprintf("[ %s ]", cli.Session.Room.Name))
 	/*
-	if err = cli.Node.AdvertiseRoom(cli.Session.Server.ID, roomID); err != nil {
-		return utils.JoinRoomError("Failed to advertise room: " + err.Error())
-	}
+		if err = cli.Node.AdvertiseRoom(cli.Session.Server.ID, roomID); err != nil {
+			return utils.JoinRoomError("Failed to advertise room: " + err.Error())
+		}
 	*/
 	mbr, err := cli.requestListRoomMembers()
 	if err != nil {
@@ -240,15 +235,16 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 				fmt.Sprintf("connect %s failed: %s", member.AddrInfo.ID.String(), err))
 		}
 		cli.Session.Members = append(cli.Session.Members, member.User)
+
 	}
 
 	cli.Session.RoomRatchet = &p2p.RoomRatchet{
-		Index: 0,
-		ChainKey:  make([]byte, 0),
+		Index:    0,
+		ChainKey: make([]byte, 0),
 	} //TODO: initialize the ratchet with the room's initial key
 	cli.Session.BackupRatchet = &p2p.RoomRatchet{
-		Index: 0,
-		ChainKey:  make([]byte, 0),
+		Index:    0,
+		ChainKey: make([]byte, 0),
 	}
 	if err = cli.chatHandler(); err != nil {
 		return utils.JoinRoomError("Failed to initialize chat handler: " + err.Error())
@@ -257,20 +253,17 @@ func (cli *Client) joinRoomHandler(roomID string, pass string) error {
 	return nil
 }
 
-
-
 func (cli *Client) chatHandler() error {
-	
+
 	kyberPriv, ok := cli.Keybag.KyberPriv.(*kyber1024.PrivateKey)
 	if !ok {
 		return errors.New("invalid KyberPriv type")
 	}
 
-	
 	if err := cli.Node.ListenForRekeys(cli.Session.Server.ID, cli.Session.Room.ID, kyberPriv); err != nil {
 		return err
 	}
-	
+
 	chatTopic := p2p.ChatTopic(cli.Session.Server.ID, cli.Session.Room.ID)
 	topic, err := cli.Node.PS.Join(chatTopic)
 	if err != nil {
@@ -300,9 +293,9 @@ func (cli *Client) chatHandler() error {
 				if utils.IsValidationError(err) {
 					cli.UI.ShowError("Validation Error", err.Error(), "OK", 0, nil)
 				}
-				 if utils.IsSecurityError(err) {
+				if utils.IsSecurityError(err) {
 					cli.UI.ShowError("Security Error", err.Error(), "OK", 0, nil)
-					// notify other clients
+					//TODO: Notify others
 				}
 			}
 
@@ -314,13 +307,16 @@ func (cli *Client) chatHandler() error {
 					continue
 				}
 				decMsg := &models.DecrypetMessage{
-					Sender : env.Sender,
+					Sender:    env.Sender,
 					Timestamp: env.Timestamp,
-					Content: string(pt),
-					RoomID: cli.Session.Room.ID,
-					ServerID: cli.Session.Server.ID,
+					Content:   string(pt),
+					RoomID:    cli.Session.Room.ID,
+					ServerID:  cli.Session.Server.ID,
 				}
 				cli.Session.Messages = append(cli.Session.Messages, *decMsg)
+				if err := cli.Session.SessionDB.History.EnqueueEnvelope(cli.Node.Ctx, msg.Data, env, castedMsg, cli.Session.Room.ID, cli.Session.Server.ID); err != nil {
+					cli.UI.ShowError("Storage Error", "Failed to store message: "+err.Error(), "OK", 0, nil)
+				}
 				//line := fmt.Sprintf("[%d] %s: %s", env.Timestamp, env.Sender.Username, decMsg.Content)
 				formattedTime := utils.FormatPrettyTime(env.Timestamp)
 
@@ -329,27 +325,22 @@ func (cli *Client) chatHandler() error {
 					prefColor = utils.GenerateRandomColor()
 				}
 
-				lineContent := fmt.Sprintf("[yellow][%s] [%s]%s:[white] %s", formattedTime ,prefColor, env.Sender.Username, decMsg.Content)
+				lineContent := fmt.Sprintf("[yellow][%s] [%s]%s:[white] %s", formattedTime, prefColor, env.Sender.Username, decMsg.Content)
 				cli.UI.App.QueueUpdateDraw(func() {
-					cli.UI.ChatScreen.chatSection.AddItem(lineContent,"", 0, nil)
-					
+					cli.UI.ChatScreen.chatSection.AddItem(lineContent, "", 0, nil)
+
 				})
-				
+
 			}
-
-
 
 		}
 	}()
 	return nil
-   
+
 }
 
-
-
-
 func (cli *Client) decryptMessage(cm *models.ChatMessage) ([]byte, error) {
-    // Advance ratchet to the message’s index
+	// Advance ratchet to the message’s index
 	var key, nonce []byte
 	var err error
 	if cli.Session.RoomRatchet.Index <= cm.ChainIndex {
@@ -358,7 +349,7 @@ func (cli *Client) decryptMessage(cm *models.ChatMessage) ([]byte, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to get next key: %w", err)
 			}
-			for cli.Session.BackupRatchet.Index +10 <= cli.Session.RoomRatchet.Index {
+			for cli.Session.BackupRatchet.Index+10 <= cli.Session.RoomRatchet.Index {
 				_, _, err = cli.Session.BackupRatchet.NextKey()
 				if err != nil {
 					return nil, fmt.Errorf("failed to get next backup key: %w", err)
@@ -373,31 +364,32 @@ func (cli *Client) decryptMessage(cm *models.ChatMessage) ([]byte, error) {
 				return nil, fmt.Errorf("failed to get next key: %w", err)
 			}
 		}
-	}else{
+	} else {
 		return nil, fmt.Errorf("invalid chain index: %d, current index: %d", cm.ChainIndex, cli.Session.RoomRatchet.Index)
 	}
-    aead, err := chacha.New(key)
+	aead, err := chacha.New(key)
 	if err != nil {
 
-		return nil, fmt.Errorf("failed to create AEAD: %w | key: %x", err,key)
+		return nil, fmt.Errorf("failed to create AEAD: %w | key: %x", err, key)
 	}
-    return aead.Open(nil, nonce, cm.Ciphertext, nil)
+	return aead.Open(nil, nonce, cm.Ciphertext, nil)
 }
 
-
-
 func (cli *Client) sendMessageHandler(text string) error {
-    key, nonce, err := cli.Session.RoomRatchet.NextKey()
+	if cli.Session.RoomRatchet == nil {
+		cli.UI.ShowError("Error", "You must join a room before sending messages", "OK", 0, nil)
+		return utils.SendMessageError("Room ratchet is not initialized. Join a room first.")
+	}
+	key, nonce, err := cli.Session.RoomRatchet.NextKey()
 	if err != nil {
 		return fmt.Errorf("failed to get next key: %w", err)
 	}
-    aead, err := chacha.New(key)
+	aead, err := chacha.New(key)
 	if err != nil {
 		return fmt.Errorf("failed to create AEAD: %w", err)
 	}
-    ct := aead.Seal(nil, nonce, []byte(text), nil)
+	ct := aead.Seal(nil, nonce, []byte(text), nil)
 
-	// 3b) Wrap in your unified envelope
 	msg := &models.ChatMessage{
 		ChainIndex: cli.Session.RoomRatchet.Index - 1,
 		Ciphertext: ct,
@@ -419,7 +411,6 @@ func (cli *Client) sendMessageHandler(text string) error {
 
 }
 
-
 func (cli *Client) refreshMembersList(sub *pubsub.Subscription) error {
 
 	for {
@@ -432,18 +423,19 @@ func (cli *Client) refreshMembersList(sub *pubsub.Subscription) error {
 			return err
 		}
 
-
-		if cli.Node.Hub.ID != msg.ReceivedFrom{
+		if cli.Node.Hub.ID != msg.ReceivedFrom {
 			return utils.SecurityError("Received message from unexpected peer: " + msg.ReceivedFrom.String())
 		}
 
 		member := resp.Members
+		cli.Session.Log.Logf("Received %d members", len(member))
 
-		for _,m := range member {
+		for _, m := range member {
 			if m.AddrInfo.ID == cli.Node.Host.ID() {
 				// Skip self
 				continue
 			}
+			cli.Session.Log.Logf("Member: %s", m.User.PeerID)
 			alreadyInList := false
 			for _, member := range cli.Session.Members {
 				if member.PeerID == m.User.PeerID {
@@ -456,15 +448,37 @@ func (cli *Client) refreshMembersList(sub *pubsub.Subscription) error {
 				continue
 			} else {
 				cli.Session.Members = append(cli.Session.Members, m.User)
+				cli.Session.SessionDB.Peers.EnqueueUserEntry(cli.Node.Ctx, &m.User)
 				if err = cli.Node.Host.Connect(cli.Node.Ctx, m.AddrInfo); err != nil {
 					return fmt.Errorf("connect %s failed: %w", m.AddrInfo.ID.String(), err)
 				}
 			}
 		}
-		
+
 	}
 
 }
+
+/*
+func (cli *Client) requestHistoryOnJoin() error {
+	// compute sinceIndex (what you already have)
+	var since uint64 = 0
+	if cli.Session.HM != nil {
+		if idx, err := cli.Session.HM.GetLastIndex(cli.Session.Room.ID); err == nil {
+			since = idx
+		}
+	}
+
+	replyTopic := p2p.HistoryRespTopic(cli.Session.Server.ID, cli.Session.Room.ID, cli.Node.Host.ID().String())
+
+	req := models.CatchUpRequest{
+		SinceIndex: since,
+		Limit:      1000,
+	}
+	b, _ := json.Marshal(&req)
+	return cli.Node.Topics.PublishToRoom(cli.Node.Ctx, p2p.HistoryReqTopic(cli.Session.Server.ID, cli.Session.Room.ID), b)
+}
+
 /*
 
 func (cli *Client) refreshMessageList() {

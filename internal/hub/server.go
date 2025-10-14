@@ -25,12 +25,12 @@ import (
 const HubProtocolID = "/hillside/hub/1.0.0"
 
 type HubServer struct {
-	Ctx   context.Context
-	Host  host.Host
-	DHT   *dht.IpfsDHT
-	Store *HubStore
-	PS *pubsub.PubSub
-	mu    sync.Mutex
+	Ctx        context.Context
+	Host       host.Host
+	DHT        *dht.IpfsDHT
+	Store      *HubStore
+	PS         *pubsub.PubSub
+	mu         sync.Mutex
 	topicCache map[string]*pubsub.Topic
 }
 
@@ -48,7 +48,7 @@ func NewHubServer(ctx context.Context, listenAddr string) (*HubServer, error) {
 	dhtNode, err := dht.New(ctx, h,
 		dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
 		dht.Mode(dht.ModeServer))
-	
+
 	if err != nil {
 		log.Printf("[HUB] ERROR: Failed to create DHT: %v", err)
 		return nil, err
@@ -64,34 +64,34 @@ func NewHubServer(ctx context.Context, listenAddr string) (*HubServer, error) {
 	log.Printf("[HUB] DHT bootstrap completed")
 	ps, err := pubsub.NewGossipSub(ctx, h)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	// In-memory store
 	st := NewHubStore()
 	log.Printf("[HUB] Hub store initialized")
 
 	srv := &HubServer{
-		Ctx:   ctx,
-		Host:  h,
-		DHT:   dhtNode,
-		Store: st,
-		PS: ps,
+		Ctx:        ctx,
+		Host:       h,
+		DHT:        dhtNode,
+		Store:      st,
+		PS:         ps,
 		topicCache: make(map[string]*pubsub.Topic),
 	}
 
 	/*
-	// Set connection notification handlers
-	h.Network().Notify(&network.NotifyBundle{
-		ConnectedF: func(n network.Network, c network.Conn) {
-			log.Printf("[HUB] CONNECT: Peer %s connected from %s",
-				c.RemotePeer().String(), c.RemoteMultiaddr().String())
-		},
-		DisconnectedF: func(n network.Network, c network.Conn) {
-			log.Printf("[HUB] DISCONNECT: Peer %s disconnected",
-				c.RemotePeer().String())
-		},
-	})
-		*/
+		// Set connection notification handlers
+		h.Network().Notify(&network.NotifyBundle{
+			ConnectedF: func(n network.Network, c network.Conn) {
+				log.Printf("[HUB] CONNECT: Peer %s connected from %s",
+					c.RemotePeer().String(), c.RemoteMultiaddr().String())
+			},
+			DisconnectedF: func(n network.Network, c network.Conn) {
+				log.Printf("[HUB] DISCONNECT: Peer %s disconnected",
+					c.RemotePeer().String())
+			},
+		})
+	*/
 
 	h.SetStreamHandler(HubProtocolID, srv.handleRPC)
 	log.Printf("[HUB] Stream handler set for protocol: %s", HubProtocolID)
@@ -263,7 +263,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 				PasswordSalt: req.PasswordSalt,
 				PasswordHash: req.PasswordHash,
 				EncRoomKey:   req.EncRoomKey,
-				Members:    map[string]models.Member{},
+				Members:      map[string]models.Member{},
 			}
 			err := s.Store.CreateRoom(req.ServerID, rm)
 			if err == utils.ServerNotFound {
@@ -281,65 +281,71 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 		if err := encoder.Encode(models.CreateRoomResponse{RoomID: rm.ID}); err != nil {
 			log.Printf("[HUB] RPC ERROR: Failed to encode CreateRoom response: %v", err)
 		}
-    case "JoinServer":
-        var req models.JoinServerRequest
-        if err := json.Unmarshal(env.Params, &req); err != nil {
-            log.Printf("[HUB] RPC ERROR: bad JoinServer params: %v", err)
-            return
-        }
-        log.Printf("[HUB] RPC: JoinServer %s by %s", req.ServerID, remotePeer)
+	case "JoinServer":
+		var req models.JoinServerRequest
+		if err := json.Unmarshal(env.Params, &req); err != nil {
+			log.Printf("[HUB] RPC ERROR: bad JoinServer params: %v", err)
+			return
+		}
+		log.Printf("[HUB] RPC: JoinServer %s by %s", req.ServerID, remotePeer)
 
-        server, err := s.Store.GetServer(req.ServerID)
-        resp := models.JoinServerResponse{}
-        if err != nil {
-            resp.Error = "server not found"
-        } else if server.Visibility == models.Private {
-            resp.Error = "server is private"
-        } else if server.Visibility == models.PasswordProtected {
-            if !bytes.Equal(req.PasswordHash, server.PasswordHash) {
-                resp.Error = "invalid server password"
-            } else {
-                sanitized := *server
-                sanitized.PasswordSalt = server.PasswordSalt
-                sanitized.PasswordHash = server.PasswordHash
-                resp.Server = &sanitized
-            }
-        } else {
-            sanitized := *server
-            sanitized.PasswordSalt = nil
-            sanitized.PasswordHash = nil
-            resp.Server = &sanitized
-        }
+		server, err := s.Store.GetServer(req.ServerID)
+		resp := models.JoinServerResponse{}
+		if err != nil {
+			resp.Error = "server not found"
+		} else if server.Visibility == models.Private {
+			resp.Error = "server is private"
+		} else if server.Visibility == models.PasswordProtected {
+			if !bytes.Equal(req.PasswordHash, server.PasswordHash) {
+				resp.Error = "invalid server password"
+			} else {
+				sanitized := *server
+				sanitized.PasswordSalt = server.PasswordSalt
+				sanitized.PasswordHash = server.PasswordHash
+				resp.Server = &sanitized
+			}
+		} else {
+			sanitized := *server
+			sanitized.PasswordSalt = nil
+			sanitized.PasswordHash = nil
+			resp.Server = &sanitized
+		}
 
-        if err := encoder.Encode(resp); err != nil {
-            log.Printf("[HUB] RPC ERROR: encoding JoinServerResponse: %v", err)
-        }
+		if err := encoder.Encode(resp); err != nil {
+			log.Printf("[HUB] RPC ERROR: encoding JoinServerResponse: %v", err)
+		}
 
-    case "JoinRoom":
-        var req models.JoinRoomRequest
-        if err := json.Unmarshal(env.Params, &req); err != nil {
-            log.Printf("[HUB] RPC ERROR: bad JoinRoom params: %v", err)
-            return
-        }
-        log.Printf("[HUB] RPC: JoinRoom server=%s room=%s by %s",
-            req.ServerID, req.RoomID, remotePeer)
+	case "JoinRoom":
+		var req models.JoinRoomRequest
+		if err := json.Unmarshal(env.Params, &req); err != nil {
+			log.Printf("[HUB] RPC ERROR: bad JoinRoom params: %v", err)
+			return
+		}
+		log.Printf("[HUB] RPC: JoinRoom server=%s room=%s by %s",
+			req.ServerID, req.RoomID, remotePeer)
 
-        resp := models.JoinRoomResponse{}
-        room, err := s.Store.GetRoom(req.ServerID, req.RoomID)
-        if err != nil {
-            resp.Error = "room not found"
-        } else if room.Visibility == models.Private {
-            resp.Error = "room is private"
-        } else if room.Visibility == models.PasswordProtected {
-            // check password hash
-            if !bytes.Equal(req.PasswordHash, room.PasswordHash) {
-                resp.Error = "invalid room password"
-            } else {
-                resp.Room = room
-            }
-        } else {
-            resp.Room = room
-        }
+		resp := models.JoinRoomResponse{}
+		room, err := s.Store.GetRoom(req.ServerID, req.RoomID)
+		if err != nil {
+			resp.Error = "room not found"
+		} else if room.Visibility == models.Private {
+			resp.Error = "room is private"
+		} else if room.Visibility == models.PasswordProtected {
+			// check password hash
+			if !bytes.Equal(req.PasswordHash, room.PasswordHash) {
+				resp.Error = "invalid room password"
+				encoder.Encode(models.JoinRoomResponse{Error: resp.Error})
+				log.Printf("[HUB] RPC: JoinRoom failed for %s - invalid password", remotePeer)
+				return
+			} else {
+				resp.Room = room
+			}
+		} else {
+			resp.Room = room
+		}
+		if resp.Room != nil {
+			resp.Room.Members = map[string]models.Member{} // Don't leak member info
+		}
 		resp.Room.Members = map[string]models.Member{} // Don't leak member info
 		if err := encoder.Encode(resp); err != nil {
 			log.Printf("[HUB] RPC ERROR: encoding JoinRoomResponse: %v", err)
@@ -359,7 +365,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 			User: req.Sender,
 		}
 		go s.AdvertiseNewcomers(room, req.ServerID)
-	
+
 	case "ListRoomMembers":
 		var req models.ListRoomMembersRequest
 		if err := json.Unmarshal(env.Params, &req); err != nil {
@@ -392,28 +398,28 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 func (s *HubServer) AdvertiseNewcomers(room *models.RoomMeta, serverID string) error {
 	// TODO: Encrypt the members list before publishing
 	if room == nil {
-		log.Printf("[HUB] ERROR: Room not found", )
+		log.Printf("[HUB] ERROR: Room not found")
 		return fmt.Errorf("room not found")
 	}
 	if room.Members == nil {
 		log.Printf("[HUB] ERROR: Room %s in server %s has nil members", room.ID, serverID)
 		return fmt.Errorf("room %s in server %s has nil members", room.ID, serverID)
 	}
-    targets := room.Members
+	targets := room.Members
 	MemberTopic := p2p.MembersTopic(serverID, room.ID)
 	s.mu.Lock()
-    top, ok := s.topicCache[MemberTopic]
-    if !ok {
-        var err error
-        top, err = s.PS.Join(MemberTopic)
-        if err != nil {
-            s.mu.Unlock()
-            log.Printf("[HUB] ERROR: Failed to join Members topic %s: %v", MemberTopic, err)
-            return err
-        }
-        s.topicCache[MemberTopic] = top
-    }
-    s.mu.Unlock()
+	top, ok := s.topicCache[MemberTopic]
+	if !ok {
+		var err error
+		top, err = s.PS.Join(MemberTopic)
+		if err != nil {
+			s.mu.Unlock()
+			log.Printf("[HUB] ERROR: Failed to join Members topic %s: %v", MemberTopic, err)
+			return err
+		}
+		s.topicCache[MemberTopic] = top
+	}
+	s.mu.Unlock()
 	var resp models.ListRoomMembersResponse
 	resp.Members = make([]models.Member, 0, len(targets))
 	for _, member := range targets {
@@ -433,3 +439,4 @@ func (s *HubServer) AdvertiseNewcomers(room *models.RoomMeta, serverID string) e
 		room.ID, serverID, MemberTopic)
 	return nil
 }
+

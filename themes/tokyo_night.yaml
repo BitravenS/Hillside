@@ -23,6 +23,10 @@ colors:
   orange: "#ff9e64"
   purple: "#bb9af7"
 
+  accent: "#ff9e64"
+  primary: "#7aa2f7"
+  secondary: "#bb9af7"
+
   # UI specific colors
   selection: "#414868"
   border: "#565f89"
