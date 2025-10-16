@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"hillside/internal/models"
+	"hillside/internal/p2p"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -32,6 +35,7 @@ type ChatScreen struct {
 	sendButton    *tview.Button
 	joinForm      *tview.Form
 	selectedRoom  models.RoomMeta
+	inputHandler  func()
 }
 
 func (c *ChatScreen) NewChatScreen() {
@@ -40,8 +44,8 @@ func (c *ChatScreen) NewChatScreen() {
 		SetBorder(false)
 
 	c.roomList = tview.NewList()
-	c.roomList.SetSelectedBackgroundColor(c.UI.Theme.GetColor("background-light"))
-	c.roomList.SetSelectedTextColor(c.UI.Theme.GetColor("primary")).
+	c.roomList.SetSelectedBackgroundColor(c.Theme.GetColor("background-light"))
+	c.roomList.SetSelectedTextColor(c.Theme.GetColor("primary")).
 		SetHighlightFullLine(true)
 
 	c.roomList.
@@ -83,14 +87,14 @@ func (c *ChatScreen) NewChatScreen() {
 			if message != "" {
 				err := c.sendMessage(message)
 				if err != nil {
-					c.UI.ShowError("Send message failed", err.Error(), "OK", 0, nil)
+					c.ShowError("Send message failed", err.Error(), "OK", 0, nil)
 					return nil
 				}
 				c.msgInput.SetText("", false)
 			}
 			return nil
-		} else if event.Key() == tcell.KeyEscape {
-			c.UI.App.SetFocus(c.chatSection) // Focus back to chat section on Escape
+		} else if event.Key() == tcell.KeyTAB {
+			c.App.SetFocus(c.chatSection)
 			return nil
 		}
 		return event
@@ -101,7 +105,7 @@ func (c *ChatScreen) NewChatScreen() {
 		SetBorderColor(c.Theme.GetColor("foreground"))
 
 	c.chatSection = tview.NewList() //where the messages will be displayed
-	c.chatSection.SetSelectedBackgroundColor(c.UI.Theme.GetColor("background-light"))
+	c.chatSection.SetSelectedBackgroundColor(c.Theme.GetColor("background-light"))
 
 	c.chatView = tview.NewFlex()
 	c.chatView.SetDirection(tview.FlexRow)
@@ -117,11 +121,29 @@ func (c *ChatScreen) NewChatScreen() {
 
 	c.layout.AddItem(c.roomWrapper, 0, 1, false).
 		AddItem(c.chatView, 0, 4, true)
-	c.UI.App.SetFocus(c.msgInput)
+	c.App.SetFocus(c.msgInput)
+	if c.inputHandler != nil {
+		fmt.Printf("Chat input handler set already: %p\n", c.inputHandler)
+		fmt.Printf("Is layout initialized? %v\n", c.layout != nil)
+
+		c.inputHandler()
+	}
 
 }
 
+func (c *ChatScreen) HookupInputHandler() {
+	if c.inputHandler != nil {
+		fmt.Printf("Chat input handler set already: %p\n", c.inputHandler)
+		fmt.Printf("Is layout initialized? %v\n", c.layout != nil)
+
+		c.inputHandler()
+	}
+}
+
 func (c *ChatScreen) UpdateRoomList(rooms []models.RoomMeta) {
+	sort.SliceStable(rooms, func(i, j int) bool {
+		return rooms[i].Name < rooms[j].Name
+	})
 	c.rooms = rooms
 	c.roomList.Clear()
 	if len(rooms) == 0 {
@@ -149,7 +171,7 @@ func (c *ChatScreen) UpdateRoomList(rooms []models.RoomMeta) {
 					if c.selectedRoom.Visibility == models.Public {
 						err := c.OnJoinRoom(c.selectedRoom.ID, "")
 						if err != nil {
-							c.UI.ShowError("Join room failed", err.Error(), "OK", 0, nil)
+							c.ShowError("Join room failed", err.Error(), "OK", 0, nil)
 							return
 						}
 					} else {
@@ -179,37 +201,37 @@ func (c *ChatScreen) showCreateRoomForm() {
 
 	c.modalForm = tview.NewForm()
 
-	bgColor, fieldBg, buttonBg, buttonText, fieldText := c.UI.Theme.FormColors()
+	bgColor, fieldBg, buttonBg, buttonText, fieldText := c.Theme.FormColors()
 	c.modalForm.SetBackgroundColor(bgColor)
 	c.modalForm.SetButtonBackgroundColor(buttonBg)
 	c.modalForm.SetButtonTextColor(buttonText)
 	c.modalForm.SetFieldBackgroundColor(fieldBg)
 	c.modalForm.SetFieldTextColor(fieldText)
-	c.modalForm.SetLabelColor(c.UI.Theme.GetColor("primary"))
+	c.modalForm.SetLabelColor(c.Theme.GetColor("primary"))
 	c.modalForm.SetBorder(true)
-	c.modalForm.SetBorderColor(c.UI.Theme.GetColor("border"))
+	c.modalForm.SetBorderColor(c.Theme.GetColor("border"))
 	c.modalForm.SetBorderAttributes(tcell.AttrNone)
 
 	visibilityDropdown := tview.NewDropDown().
 		SetLabel("Visibility").
 		SetOptions([]string{"Public", "Password Protected", "Private"}, nil)
 
-	visibilityDropdown.SetBackgroundColor(c.UI.Theme.GetColor("background"))
+	visibilityDropdown.SetBackgroundColor(c.Theme.GetColor("background"))
 	visibilityDropdown.SetFieldBackgroundColor(fieldBg)
 	visibilityDropdown.SetFieldTextColor(fieldText)
-	visibilityDropdown.SetPrefixTextColor(c.UI.Theme.GetColor("background-light"))
-	visibilityDropdown.SetLabelColor(c.UI.Theme.GetColor("primary"))
+	visibilityDropdown.SetPrefixTextColor(c.Theme.GetColor("background-light"))
+	visibilityDropdown.SetLabelColor(c.Theme.GetColor("primary"))
 	visibilityDropdown.SetListStyles(
 		tcell.StyleDefault.
 			Foreground(fieldText).
-			Background(c.UI.Theme.GetColor("background")),
+			Background(c.Theme.GetColor("background")),
 		tcell.StyleDefault.
 			Foreground(fieldText).
-			Background(c.UI.Theme.GetColor("background-light")),
+			Background(c.Theme.GetColor("background-light")),
 	)
 	visibilityDropdown.SetFocusedStyle(tcell.StyleDefault.
 		Foreground(fieldText).
-		Background(c.UI.Theme.GetColor("background")))
+		Background(c.Theme.GetColor("background")))
 
 	c.modalForm.AddInputField("Name", "", 0, nil, nil).
 		AddPasswordField("Password (opt)", "", 0, '*', nil).
@@ -228,25 +250,25 @@ func (c *ChatScreen) showCreateRoomForm() {
 
 			sid, err := c.OnCreateRoom(req)
 			if err != nil {
-				c.UI.ShowError("Create room failed", err.Error(), "OK", 0, nil)
+				c.ShowError("Create room failed", err.Error(), "OK", 0, nil)
 				return
 			}
 			if req.Visibility == models.Private {
-				c.UI.ShowToast(fmt.Sprintf("Room created successfully! ID: %s\nThis RoomID will be the only way to access the room. It's been saved under ~/.hillside, encrypted with the room password. DON'T LOSE IT", sid), 0, nil)
+				c.ShowToast(fmt.Sprintf("Room created successfully! ID: %s\nThis RoomID will be the only way to access the room. It's been saved under ~/.hillside, encrypted with the room password. DON'T LOSE IT", sid), 0, nil)
 				saveEncryptedSID(sid, pass)
 			} else {
-				c.UI.ShowToast("Room created successfully! ID: "+sid, 3*time.Second, nil)
+				c.ShowToast("Room created successfully! ID: "+sid, 3*time.Second, nil)
 			}
-			c.UI.Pages.RemovePage("createRoom")
+			c.Pages.RemovePage("createRoom")
 		}).
 		AddButton("Cancel", func() {
-			c.UI.Pages.RemovePage("createRoom")
+			c.Pages.RemovePage("createRoom")
 		})
 
 	c.modalForm.SetBorder(true).
 		SetTitle("[ Create Server ]").
 		SetTitleAlign(tview.AlignCenter).
-		SetTitleColor(c.UI.Theme.GetColor("primary"))
+		SetTitleColor(c.Theme.GetColor("primary"))
 
 	mf := func(p tview.Primitive, width, height int) tview.Primitive {
 		return tview.NewFlex().
@@ -258,22 +280,22 @@ func (c *ChatScreen) showCreateRoomForm() {
 			AddItem(nil, 0, 1, false)
 	}
 
-	c.UI.Pages.AddPage("createRoom", mf(c.modalForm, 40, 12), true, true)
-	c.UI.App.SetFocus(c.modalForm)
+	c.Pages.AddPage("createRoom", mf(c.modalForm, 40, 12), true, true)
+	c.App.SetFocus(c.modalForm)
 }
 
 func (c *ChatScreen) joinRoomForm() {
 	c.joinForm = tview.NewForm()
 
-	bgColor, fieldBg, buttonBg, buttonText, fieldText := c.UI.Theme.FormColors()
+	bgColor, fieldBg, buttonBg, buttonText, fieldText := c.Theme.FormColors()
 	c.joinForm.SetBackgroundColor(bgColor)
 	c.joinForm.SetButtonBackgroundColor(buttonBg)
 	c.joinForm.SetButtonTextColor(buttonText)
 	c.joinForm.SetFieldBackgroundColor(fieldBg)
 	c.joinForm.SetFieldTextColor(fieldText)
-	c.joinForm.SetLabelColor(c.UI.Theme.GetColor("primary"))
+	c.joinForm.SetLabelColor(c.Theme.GetColor("primary"))
 	c.joinForm.SetBorder(true)
-	c.joinForm.SetBorderColor(c.UI.Theme.GetColor("border"))
+	c.joinForm.SetBorderColor(c.Theme.GetColor("border"))
 	c.joinForm.SetBorderAttributes(tcell.AttrNone)
 	c.joinForm.SetButtonsAlign(tview.AlignCenter)
 
@@ -283,20 +305,20 @@ func (c *ChatScreen) joinRoomForm() {
 
 			err := c.OnJoinRoom(c.selectedRoom.ID, pass)
 			if err != nil {
-				c.UI.ShowError("Join room failed", err.Error(), "OK", 0, nil)
+				c.ShowError("Join room failed", err.Error(), "OK", 0, nil)
 				return
 			}
 
-			c.UI.Pages.RemovePage("joinRoom")
+			c.Pages.RemovePage("joinRoom")
 		}).
 		AddButton("Cancel", func() {
-			c.UI.Pages.RemovePage("joinRoom")
+			c.Pages.RemovePage("joinRoom")
 		})
 
 	c.joinForm.SetBorder(true).
 		SetTitle(fmt.Sprintf("[ Join %s ]", c.selectedRoom.Name)).
 		SetTitleAlign(tview.AlignCenter).
-		SetTitleColor(c.UI.Theme.GetColor("primary"))
+		SetTitleColor(c.Theme.GetColor("primary"))
 
 	mf := func(p tview.Primitive, width, height int) tview.Primitive {
 		return tview.NewFlex().
@@ -308,6 +330,93 @@ func (c *ChatScreen) joinRoomForm() {
 			AddItem(nil, 0, 1, false)
 	}
 
-	c.UI.Pages.AddPage("joinRoom", mf(c.joinForm, 40, 8), true, true)
-	c.UI.App.SetFocus(c.joinForm)
+	c.Pages.AddPage("joinRoom", mf(c.joinForm, 40, 8), true, true)
+	c.App.SetFocus(c.joinForm)
+}
+
+func isChatPageActive(page string) bool {
+	return page == "chat" || page == "createRoom" || page == "toast" || page == "joinRoom" || page == "error"
+}
+
+func (cli *Client) StartRoomAutoRefresh() {
+	cli.refreshServerList()
+	currentPage, _ := cli.UI.Pages.GetFrontPage()
+	cli.Session.Log.Logf("Starting auto-refresh on page: %s", currentPage)
+
+	refreshCtx, cancelRefresh := context.WithCancel(cli.Node.Ctx)
+	defer cancelRefresh()
+
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				currentPage, _ := cli.UI.Pages.GetFrontPage()
+				cli.Session.Log.Logf("Auto-refresh tick on page: %s", currentPage)
+				if !isChatPageActive(currentPage) {
+					cli.Session.Log.Logf("Left chat page, stopping auto-refresh")
+					cancelRefresh() // This will break the message loop
+					return
+				}
+			case <-refreshCtx.Done():
+				return
+			}
+		}
+	}()
+
+	RoomsTopic := p2p.RoomsTopic(cli.Session.Server.ID)
+	top, err := cli.Node.PS.Join(RoomsTopic)
+	if err != nil {
+		cli.Session.Log.Logf("Failed to join rooms topic: %v", err)
+		return
+	}
+	cli.Node.Topics.RoomsTopic = top
+
+	sub, err := cli.Node.Topics.RoomsTopic.Subscribe()
+	if err != nil {
+		cli.Session.Log.Logf("Failed to subscribe to rooms topic: %v", err)
+		return
+	}
+	defer sub.Cancel()
+
+	for {
+		select {
+		case <-refreshCtx.Done():
+			cli.Session.Log.Logf("Auto-refresh cancelled")
+			return
+		default:
+			msg, err := sub.Next(refreshCtx)
+			if err != nil {
+				if err == context.Canceled {
+					cli.Session.Log.Logf("Auto-refresh stopped due to page change")
+
+					currentPage, _ := cli.UI.Pages.GetFrontPage()
+					cli.Session.Log.Logf("Current page: %s", currentPage)
+				} else {
+					cli.Session.Log.Logf("Error reading from rooms topic: %v", err)
+				}
+				return
+			}
+
+			var listResp models.ListRoomsResponse
+			err = json.Unmarshal(msg.Data, &listResp)
+			if err != nil {
+				cli.Session.Log.Logf("Error unmarshaling rooms topic message: %v", err)
+
+			}
+			cli.Session.Log.Logf("Received rooms list update with %d rooms", len(listResp.Rooms))
+			cli.UI.App.QueueUpdateDraw(func() {
+				if err != nil {
+					cli.UI.ShowError("Rooms Error", err.Error(), "Go back to servers", 0, func() {
+						cli.UI.Pages.SwitchToPage("browse")
+					})
+					return
+				} else {
+					cli.UI.ChatScreen.UpdateRoomList(listResp.Rooms)
+				}
+			})
+		}
+	}
 }

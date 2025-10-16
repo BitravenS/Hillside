@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"encoding/json"
@@ -111,6 +112,13 @@ func formatBoolPasswordProtected(passwordProtected models.Visibility) string {
 	return "    "
 }
 func (b *BrowseScreen) UpdateServerList(servers []models.ServerMeta) {
+	sort.SliceStable(servers, func(i, j int) bool {
+		if servers[i].Online == servers[j].Online {
+			return servers[i].Name < servers[j].Name
+		}
+		return servers[i].Online > servers[j].Online
+	})
+
 	b.servers = servers
 	b.serverList.Clear()
 	if len(servers) == 0 {
@@ -310,7 +318,7 @@ func (cli *Client) refreshServerList() {
 		}
 	})
 }
-func isPageActive(page string) bool {
+func isBrowsePageActive(page string) bool {
 	return page == "browse" || page == "createServer" || page == "toast"
 }
 
@@ -331,7 +339,7 @@ func (cli *Client) StartAutoRefresh() {
 			select {
 			case <-ticker.C:
 				currentPage, _ := cli.UI.Pages.GetFrontPage()
-				if !isPageActive(currentPage) {
+				if !isBrowsePageActive(currentPage) {
 					cli.Session.Log.Logf("Left browse page, stopping auto-refresh")
 					cancelRefresh() // This will break the message loop
 					return

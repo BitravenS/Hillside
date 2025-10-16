@@ -5,7 +5,6 @@ go 1.24.3
 require (
 	github.com/cloudflare/circl v1.6.1
 	github.com/gdamore/tcell/v2 v2.7.1
-	github.com/go-pg/pg/v10 v10.15.0
 	github.com/libp2p/go-libp2p v0.41.1
 	github.com/libp2p/go-libp2p-kad-dht v0.33.1
 	github.com/libp2p/go-libp2p-pubsub v0.14.0

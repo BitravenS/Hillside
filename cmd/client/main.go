@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"hillside/internal/models"
@@ -49,7 +50,13 @@ func main() {
 		createRoomHandler:   client.createRoomHandler,
 		joinRoomHandler:     client.joinRoomHandler,
 		sendMessageHandler:  client.sendMessageHandler,
+		chatInputHandler:    client.chatInputHandler,
 	})
+
+	fmt.Println("Starting Hillside Client...")
+	fmt.Println("Is ui chatscreen nil?", client.UI.ChatScreen == nil)
+	client.UI.ChatScreen.inputHandler = client.chatInputHandler
+	client.UI.ChatScreen.HookupInputHandler()
 	node := &p2p.Node{
 		Ctx: ctx,
 	}

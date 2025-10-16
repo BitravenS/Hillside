@@ -15,6 +15,7 @@ import (
 
 	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/sign/dilithium/mode2"
+	"github.com/gdamore/tcell/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 	chacha "golang.org/x/crypto/chacha20poly1305"
@@ -122,6 +123,25 @@ func (cli *Client) SwitchToBrowseScreen(hub string) {
 	go cli.StartAutoRefresh()
 }
 
+func (cli *Client) SwitchToChatScreen() {
+	cli.UI.Pages.SwitchToPage("chat")
+	go cli.StartRoomAutoRefresh()
+}
+
+func (cli *Client) chatInputHandler() {
+	fmt.Printf("Checking if layout is nil: %v\n", cli.UI.ChatScreen.layout == nil)
+	cli.UI.ChatScreen.layout.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyTAB {
+			cli.UI.App.SetFocus(cli.UI.ChatScreen.chatSection) // Focus back to chat section on Escape
+			return nil
+		} else if event.Key() == tcell.KeyESC {
+			cli.SwitchToBrowseScreen(cli.UI.BrowseScreen.Hub)
+			return nil
+		}
+		return event
+	})
+}
+
 func (cli *Client) createServerHandler(request models.CreateServerRequest) (serverID string, err error) {
 	if request.Name == "" {
 		return "", utils.CreateServerError("Server name cannot be empty")
@@ -176,7 +196,7 @@ func (cli *Client) joinServerHandler(serverID string, pass string) error {
 	if err != nil {
 		return utils.JoinServerError(err.Error())
 	}
-	cli.UI.Pages.SwitchToPage("chat")
+	cli.SwitchToChatScreen()
 	cli.UI.ChatScreen.roomWrapper.SetTitle(fmt.Sprintf("[ %s ]", cli.Session.Server.Name))
 	go cli.refreshRoomList()
 	return nil

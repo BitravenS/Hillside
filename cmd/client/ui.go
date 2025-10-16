@@ -21,6 +21,7 @@ type UIConfig struct {
 	createRoomHandler   func(req models.CreateRoomRequest) (string, error)
 	joinRoomHandler     func(roomID string, pass string) error
 	sendMessageHandler  func(message string) error
+	chatInputHandler    func()
 }
 
 type UI struct {
@@ -95,6 +96,7 @@ func NewUI(cfg *UIConfig) *UI {
 		OnJoinRoom:    cfg.joinRoomHandler,
 		sendMessage:   cfg.sendMessageHandler,
 	}
+
 	ui.ChatScreen.NewChatScreen()
 
 	ui.Pages = tview.NewPages().

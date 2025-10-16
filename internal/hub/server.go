@@ -282,6 +282,8 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 		if err := encoder.Encode(models.CreateRoomResponse{RoomID: rm.ID}); err != nil {
 			log.Printf("[HUB] RPC ERROR: Failed to encode CreateRoom response: %v", err)
 		}
+
+		go s.AdvertiseNewRoom(req.ServerID)
 	case "JoinServer":
 		var req models.JoinServerRequest
 		if err := json.Unmarshal(env.Params, &req); err != nil {
@@ -486,5 +488,60 @@ func (s *HubServer) AdvertiseNewServer() error {
 	}
 
 	log.Printf("[HUB] Advertised new server to topic %s", serversTopic)
+	return nil
+}
+
+func (s *HubServer) AdvertiseNewRoom(serverID string) error {
+	roomPtrs, err := s.Store.ListRooms(serverID)
+	if err != nil {
+		log.Printf("[HUB] AD ERROR: ListRooms failed for server %s: %v",
+			serverID, err)
+		return err
+	}
+
+	rooms := make([]models.RoomMeta, len(roomPtrs))
+	for i, roomPtr := range roomPtrs {
+		rooms[i] = *roomPtr
+	}
+	out := make([]models.RoomMeta, 0)
+	for _, room := range rooms {
+		if room.Visibility != models.Private {
+			sanitized := room
+			sanitized.PasswordSalt = nil
+			sanitized.PasswordHash = nil
+			sanitized.Members = nil // Don't leak member info
+
+			out = append(out, sanitized)
+		}
+	}
+
+	log.Printf("[HUB] AD: ListRooms returning %d public rooms for server %s",
+		len(out), serverID)
+	resp := models.ListRoomsResponse{Rooms: out}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		log.Printf("[HUB] AD ERROR: Failed to marshal room metadata: %v", err)
+	}
+	roomsTopic := p2p.RoomsTopic(serverID)
+	s.mu.Lock()
+	top, ok := s.topicCache[roomsTopic]
+	if !ok {
+		top, err = s.PS.Join(roomsTopic)
+		if err != nil {
+			s.mu.Unlock()
+			log.Printf("[HUB] AD ERROR: Failed to join rooms topic: %v", err)
+			return err
+		}
+		s.topicCache[roomsTopic] = top
+	}
+	s.mu.Unlock()
+
+	if err := top.Publish(s.Ctx, data); err != nil {
+		log.Printf("[HUB] AD ERROR: Failed to publish new room to topic: %v", err)
+		return err
+	}
+
+	log.Printf("[HUB] AD Advertised new room to topic %s", roomsTopic)
 	return nil
 }

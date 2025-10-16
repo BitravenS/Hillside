@@ -20,6 +20,7 @@ type Topics struct {
 	ServersTopic    *pubsub.Topic
 	RekeyTopic      *pubsub.Topic
 	ChatTopic       *pubsub.Topic
+	RoomsTopic      *pubsub.Topic
 	MembersTopic    *pubsub.Topic
 	CatchUpTopic    *pubsub.Topic
 	UserUpdateTopic *pubsub.Topic
