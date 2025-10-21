@@ -7,9 +7,8 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 )
 
-
 func RendezvousString(serverID, roomID string) string {
-    return fmt.Sprintf("/hillside/rendezvous/%s/%s", serverID, roomID)
+	return fmt.Sprintf("/hillside/rendezvous/%s/%s", serverID, roomID)
 }
 
 func (n *Node) AdvertiseRoom(serverID, roomID string) error {
@@ -18,7 +17,6 @@ func (n *Node) AdvertiseRoom(serverID, roomID string) error {
 	_, err := routingDiscovery.Advertise(n.Ctx, rendezvous)
 	return err
 }
-
 
 func (n *Node) DiscoverPeers(serverID, roomID string) ([]peer.AddrInfo, error) {
 	routingDiscovery := routing.NewRoutingDiscovery(n.DHT)

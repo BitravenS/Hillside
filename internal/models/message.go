@@ -1,11 +1,8 @@
+// Package models defines the global data models used across the application (for both the client and server).
 package models
 
 import (
 	"encoding/json"
-	"fmt"
-	"time"
-
-	"github.com/cloudflare/circl/sign/dilithium/mode2"
 )
 
 // MessageType indicates which kind of payload lives inside the Envelope.
@@ -19,7 +16,6 @@ const (
 	MsgTypeCatchUpReq  MessageType = "catchup_req"
 	MsgTypeCatchUpResp MessageType = "catchup_resp"
 	MsgTypeUserUpdate  MessageType = "user_update"
-	// … add more as needed
 )
 
 type DecrypetMessage struct {
@@ -70,15 +66,17 @@ type RekeyEntry struct {
 func (RekeyMessage) Type() MessageType { return MsgTypeRekey }
 
 type CatchUpRequest struct {
-	SinceIndex uint64 `json:"since_index"` // last chain index requester already has
+	SinceIndex uint64 `json:"since_index,omitempty"` // last chain index requester already has
 }
 
 func (CatchUpRequest) Type() MessageType { return MsgTypeCatchUpReq }
 
 type CatchUpResponse struct {
-	EncState   []byte `json:"enc_state"` // encrypted (KEM+AEAD) gzipped framed envelopes
-	ChainIndex uint64 `json:"chain_index"`
-	Error      string `json:"error,omitempty"` // if any error occurred during catch-up
+	MasterRoomKey     []byte `json:"master_room_key"`
+	MasterRoomKeyBase []byte `json:"master_room_key_base"` // base key, hashed becomes MasterRoomKey (for Proof of Work)
+	ChainIndex        uint64 `json:"chain_index"`
+	CatchUpMessages   []byte `json:"catchup_messages"` // serialized CatchUpMessages
+	Error             string `json:"error,omitempty"`  // if any error occurred during catch-up
 }
 
 func (CatchUpResponse) Type() MessageType { return MsgTypeCatchUpResp }
@@ -98,75 +96,14 @@ type Envelope struct {
 	Payload   json.RawMessage `json:"payload"`
 }
 
-func Marshal(msg Message, sender User, sigPK *mode2.PrivateKey) ([]byte, error) {
-	payload, err := json.Marshal(msg)
-	if err != nil {
-		return nil, err
-	}
-
-	sig := make([]byte, mode2.SignatureSize)
-	if sigPK != nil {
-		// Sign the payload with the sender's private key
-		mode2.SignTo(sigPK, payload, sig)
-	}
-	env := Envelope{
-		Type:      msg.Type(),
-		Sender:    sender,
-		Timestamp: time.Now().UnixMicro(),
-		Signature: sig,
-		Payload:   payload,
-	}
-	return json.Marshal(env)
-}
-
-// For storage and retrieval from the database
 type StoredMessage struct {
-	ID         int64
-	RoomID     string
-	ServerID   string
-	ChainIndex *uint64
-	MsgType    MessageType
-	SenderID   string
-	Timestamp  int64
-	Signature  []byte
-	Payload    []byte
-}
-
-func UnmarshalEnvelope(data []byte) (*Envelope, Message, error) {
-	var env Envelope
-	if err := json.Unmarshal(data, &env); err != nil {
-		return nil, nil, err
-	}
-
-	var msg Message
-	switch env.Type {
-	case MsgTypeChat:
-		m := new(ChatMessage)
-		msg = m
-	case MsgTypeJoin:
-		m := new(JoinMessage)
-		msg = m
-	case MsgTypeLeave:
-		m := new(LeaveMessage)
-		msg = m
-	case MsgTypeRekey:
-		m := new(RekeyMessage)
-		msg = m
-	case MsgTypeCatchUpReq:
-		m := new(CatchUpRequest)
-		msg = m
-	case MsgTypeCatchUpResp:
-		m := new(CatchUpResponse)
-		msg = m
-	case MsgTypeUserUpdate:
-		m := new(UserUpdate)
-		msg = m
-	default:
-		return &env, nil, fmt.Errorf("unknown message type: %s", env.Type)
-	}
-
-	if err := json.Unmarshal(env.Payload, msg); err != nil {
-		return &env, nil, err
-	}
-	return &env, msg, nil
+	ID         int64       `json:"id,omitempty"`
+	RoomID     string      `json:"room_id"`
+	ServerID   string      `json:"server_id,omitempty"`
+	ChainIndex *uint64     `json:"chain_index"`
+	MsgType    MessageType `json:"msg_type"`
+	SenderID   string      `json:"sender_id"`
+	Timestamp  int64       `json:"timestamp"`
+	Signature  []byte      `json:"signature"`
+	Payload    []byte      `json:"payload"`
 }

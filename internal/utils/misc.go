@@ -64,3 +64,15 @@ func FormatPrettyTime(unixMicro int64) string {
 
 	return fmt.Sprintf("%d %s %02d %s", year, t.Format("Jan"), day, timePart)
 }
+
+func Now() int64 {
+	return time.Now().UnixMicro()
+}
+
+func IsChatPageActive(page string) bool {
+	return page == "chat" || page == "createRoom" || page == "toast" || page == "joinRoom" || page == "error"
+}
+
+func IsBrowsePageActive(page string) bool {
+	return page == "browse" || page == "createServer" || page == "toast"
+}

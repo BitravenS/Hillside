@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"sync"
 	"time"
 
 	"hillside/internal/models"
+	"hillside/internal/utils"
 )
 
 type HistoryManager struct {
@@ -27,13 +32,14 @@ type HistoryManager struct {
 }
 
 type messageWriteRequest struct {
-	raw      []byte
-	env      *models.Envelope
-	chain    *uint64
-	roomID   string
-	serverID string
-	ctx      context.Context
-	result   chan error
+	storedMsg models.StoredMessage
+	ctx       context.Context
+	result    chan error
+}
+
+type CatchUpMessages struct {
+	ReturnedMessages []models.StoredMessage
+	SenderID         string
 }
 
 // NewHistoryManager returns a ready-to-start history manager.
@@ -62,24 +68,28 @@ func (h *HistoryManager) Stop() {
 	h.wg.Wait()
 }
 
-func (h *HistoryManager) EnqueueEnvelope(ctx context.Context, raw []byte, env *models.Envelope, msg models.Message, roomID string, serverID string) error {
-	var chainIdx uint64
-	switch env.Type {
-	case models.MsgTypeChat:
-		m := msg.(*models.ChatMessage)
-		chainIdx = m.ChainIndex
-	default:
-		// control messages may carry room info in payload; leave roomID empty here
-	}
+func (h *HistoryManager) EnqueueEnvelope(
+	ctx context.Context,
+	signature, payload []byte,
+	timestamp int64,
+	msgType models.MessageType,
+	chainIndex *uint64,
+	sender_id, roomID, serverID string,
+) error {
 
 	req := messageWriteRequest{
-		raw:      raw,
-		env:      env,
-		chain:    &chainIdx,
-		roomID:   roomID,
-		serverID: serverID,
-		ctx:      ctx,
-		result:   make(chan error, 1),
+		storedMsg: models.StoredMessage{
+			RoomID:     roomID,
+			ServerID:   serverID,
+			ChainIndex: chainIndex,
+			MsgType:    msgType,
+			SenderID:   sender_id,
+			Timestamp:  timestamp,
+			Signature:  signature,
+			Payload:    payload,
+		},
+		ctx:    ctx,
+		result: make(chan error, 1),
 	}
 
 	select {
@@ -105,13 +115,13 @@ func (h *HistoryManager) writeWorker(store *Store) {
 		}
 		for _, r := range batch {
 			_ = r.ctx // currently unused, but could use store.WithContext
-			if err := store.SaveEnvelope(context.Background(), r.raw, r.env, r.chain, r.roomID, r.serverID); err != nil {
+			if err := store.SaveEnvelope(context.Background(), r.storedMsg.Signature, r.storedMsg.Payload, r.storedMsg.Timestamp, r.storedMsg.MsgType, r.storedMsg.ChainIndex, r.storedMsg.SenderID, r.storedMsg.RoomID, r.storedMsg.ServerID); err != nil {
 				log.Printf("history: save envelope error: %v", err)
 				r.result <- err
 			} else {
 				// update lastIndex cache if chain present
-				if r.chain != nil && r.roomID != "" {
-					h.setLastIndex(r.roomID, *r.chain)
+				if r.storedMsg.ChainIndex != nil && r.storedMsg.RoomID != "" {
+					h.setLastIndex(r.storedMsg.RoomID, *r.storedMsg.ChainIndex)
 				}
 				r.result <- nil
 			}
@@ -180,22 +190,26 @@ func (h *HistoryManager) GetLastIndex(room string, store *Store) (uint64, error)
 }
 
 // BuildCatchUpPayload will fetch messages since `sinceIndex`, compress them to a gzipped
-func (h *HistoryManager) BuildCatchUpPayload(ctx context.Context, roomID string, sinceIndex uint64, limit int, store *Store) (payload []byte, lastIndex uint64, err error) {
-	msgs, err := store.GetMessagesSinceChainIndex(ctx, roomID, sinceIndex, limit)
+func (h *HistoryManager) BuildCatchUpPayload(ctx context.Context, roomID string, sinceIndex uint64, limit int, store *Store) (payload []byte, lastIndex uint64, err error, msgs []models.StoredMessage) {
+	msgs, err = store.GetMessagesSinceChainIndex(ctx, roomID, sinceIndex, limit)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, err, nil
 	}
 	if len(msgs) == 0 {
 		latest, _ := h.GetLastIndex(roomID, store)
-		return nil, latest, nil
+		return nil, latest, nil, nil
 	}
 
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	for _, m := range msgs {
-		if err := writeFrame(gw, m.Signature); err != nil {
+		entry, err := json.Marshal(m)
+		if err != nil {
+			return nil, 0, err, nil
+		}
+		if err := writeFrame(gw, entry); err != nil {
 			_ = gw.Close()
-			return nil, 0, err
+			return nil, 0, err, nil
 		}
 		lastIndex = 0
 		if m.ChainIndex != nil {
@@ -203,12 +217,66 @@ func (h *HistoryManager) BuildCatchUpPayload(ctx context.Context, roomID string,
 		}
 	}
 	if err := gw.Close(); err != nil {
-		return nil, 0, err
+		return nil, 0, err, nil
 	}
-	return buf.Bytes(), lastIndex, nil
+	return buf.Bytes(), lastIndex, nil, msgs
 }
 
-// Helper: write framed signature into gzip writer (8-byte length + data)
+var RL, _ = utils.NewRemoteLogger(7000)
+
+// DecompressCatchUpPayload decompresses the payload and writes the entries to the db.
+func (h *HistoryManager) DecompressCatchUpPayload(ctx context.Context, payload []byte, roomID string, store *Store) (*CatchUpMessages, error) {
+	if len(payload) == 0 {
+		return &CatchUpMessages{ReturnedMessages: make([]models.StoredMessage, 0)}, nil
+	}
+	gr, err := gzip.NewReader(bytes.NewReader(payload))
+	RL.Logf("Created gzip object")
+	if err != nil {
+		RL.Logf("Got an error at 1: %+v", err)
+		return nil, err
+	}
+	catchUpMsgs := &CatchUpMessages{
+		ReturnedMessages: make([]models.StoredMessage, 0),
+	}
+	defer gr.Close()
+
+	for {
+		entry, err := readFrame(gr)
+		if err != nil {
+
+			RL.Logf("Got an error at 2: %+v", err)
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+
+				RL.Logf("ERROR IS EOF: %+v", err)
+				break
+			}
+
+			RL.Logf("Returning with unhandled error")
+			return nil, err
+		}
+		var dec *models.StoredMessage
+		err = json.Unmarshal(entry, &dec)
+		if err != nil {
+
+			RL.Logf("Got an error at 3: %+v", err)
+			return nil, err
+		}
+		catchUpMsg := models.StoredMessage{
+			RoomID:     dec.RoomID,
+			ServerID:   dec.ServerID,
+			Payload:    dec.Payload,
+			Signature:  dec.Signature,
+			ChainIndex: dec.ChainIndex,
+			SenderID:   dec.SenderID,
+			Timestamp:  dec.Timestamp,
+			MsgType:    dec.MsgType,
+		}
+		catchUpMsgs.ReturnedMessages = append(catchUpMsgs.ReturnedMessages, catchUpMsg)
+	}
+
+	RL.Logf("Returning the correct way with")
+	return catchUpMsgs, nil
+}
 
 /*
 func (h *HistoryManager) BuildEncryptedCatchUpResponse(ctx context.Context, roomID string, sinceIndex uint64, limit int, recipientPubKey []byte) (encPayload []byte, lastIndex uint64, err error) {
@@ -230,3 +298,188 @@ func (h *HistoryManager) BuildEncryptedCatchUpResponse(ctx context.Context, room
 	return enc, lastIndex, nil
 }
 */
+
+// SaveEnvelope stores an envelope. Use chainIndex != nil for chat messages.
+// Behavior: insert is idempotent (duplicate chain_index for same room ignored).
+func (s *Store) SaveEnvelope(ctx context.Context, signature, payload []byte, timestamp int64, msgType models.MessageType, chainIndex *uint64, sender_id, roomID, serverID string) error {
+	var ci any
+	if chainIndex != nil {
+		ci = int64(*chainIndex)
+	} else {
+		ci = nil
+	}
+
+	const q = `
+INSERT OR IGNORE INTO messages
+(room_id, server_id, chain_index, msg_type, sender_id, timestamp, signature, payload)
+VALUES (?, ?, ?, ?, ?, ?, ?,?);
+`
+	_, err := s.db.ExecContext(ctx, q,
+		roomID,
+		serverID,
+		ci,
+		string(msgType),
+		sender_id,
+		timestamp,
+		signature,
+		payload,
+	)
+	if err != nil {
+		return fmt.Errorf("insert envelope: %w", err)
+	}
+	return nil
+}
+
+// GetMessagesSinceChainIndex returns chat messages with chain_index > sinceIndex ordered ASC.
+func (s *Store) GetMessagesSinceChainIndex(ctx context.Context, roomID string, sinceIndex uint64, limit int) ([]models.StoredMessage, error) {
+	var q = `
+SELECT id, room_id, server_id, chain_index, msg_type, sender_id, timestamp, signature, payload
+FROM messages
+WHERE room_id = ? AND chain_index IS NOT NULL AND chain_index >= ?
+ORDER BY chain_index ASC
+`
+	var rows *sql.Rows
+	var err error
+	if limit <= 0 {
+		q += ";"
+		rows, err = s.db.QueryContext(ctx, q, roomID, int64(sinceIndex))
+	} else {
+		q += " LIMIT ?;"
+		rows, err = s.db.QueryContext(ctx, q, roomID, int64(sinceIndex), limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("select messages since: %w", err)
+	}
+	defer rows.Close()
+
+	var out []models.StoredMessage
+	for rows.Next() {
+		var (
+			id        int64
+			room      string
+			server    sql.NullString
+			chainN    sql.NullInt64
+			msgType   string
+			senderID  sql.NullString
+			timestamp int64
+			signature []byte
+			payload   []byte
+		)
+		if err := rows.Scan(&id, &room, &server, &chainN, &msgType, &senderID, &timestamp, &signature, &payload); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		var ci *uint64
+		if chainN.Valid {
+			v := uint64(chainN.Int64)
+			ci = &v
+		}
+		sm := models.StoredMessage{
+			ID:         id,
+			RoomID:     room,
+			ServerID:   server.String,
+			ChainIndex: ci,
+			MsgType:    models.MessageType(msgType),
+			SenderID:   senderID.String,
+			Timestamp:  timestamp,
+			Signature:  signature,
+			Payload:    payload,
+		}
+		out = append(out, sm)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetLatestMessages returns latest messages ordered like Postgres implementation.
+func (s *Store) GetLatestMessages(ctx context.Context, roomID string, limit int) ([]models.StoredMessage, error) {
+	const q = `
+SELECT id, room_id, server_id, chain_index, msg_type, sender_id, timestamp, signature, payload
+FROM messages
+WHERE room_id = ?
+ORDER BY
+  CASE WHEN chain_index IS NOT NULL THEN 0 ELSE 1 END,
+  chain_index ASC,
+  timestamp ASC
+LIMIT ?;
+`
+	rows, err := s.db.QueryContext(ctx, q, roomID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("select latest messages: %w", err)
+	}
+	defer rows.Close()
+
+	var out []models.StoredMessage
+	for rows.Next() {
+		var (
+			id        int64
+			room      string
+			server    sql.NullString
+			chainN    sql.NullInt64
+			msgType   string
+			senderID  sql.NullString
+			timestamp int64
+			signature []byte
+			payload   []byte
+		)
+		if err := rows.Scan(&id, &room, &server, &chainN, &msgType, &senderID, &timestamp, &signature, &payload); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		var ci *uint64
+		if chainN.Valid {
+			v := uint64(chainN.Int64)
+			ci = &v
+		}
+		sm := models.StoredMessage{
+			ID:         id,
+			RoomID:     room,
+			ServerID:   server.String,
+			ChainIndex: ci,
+			MsgType:    models.MessageType(msgType),
+			SenderID:   senderID.String,
+			Timestamp:  timestamp,
+			Signature:  signature,
+			Payload:    payload,
+		}
+		out = append(out, sm)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetLatestChainIndex returns highest chain_index for room or ErrNoRows.
+func (s *Store) GetLatestChainIndex(ctx context.Context, roomID string) (uint64, error) {
+	const q = `
+SELECT chain_index FROM messages
+WHERE room_id = ? AND chain_index IS NOT NULL
+ORDER BY chain_index DESC
+LIMIT 1;
+`
+	var chain sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, q, roomID).Scan(&chain); err != nil {
+		if errors.Is(err, sql.ErrNoRows) || !chain.Valid {
+			return 0, ErrNoRows
+		}
+		return 0, fmt.Errorf("select latest chain index: %w", err)
+	}
+	if !chain.Valid {
+		return 0, ErrNoRows
+	}
+	return uint64(chain.Int64), nil
+}
+
+// DeleteOlderThan deletes messages older than `before` and returns rows deleted.
+func (s *Store) DeleteOlderThan(ctx context.Context, roomID string, before time.Time) (int64, error) {
+	const q = `
+DELETE FROM messages WHERE room_id = ? AND timestamp < ?;
+`
+	res, err := s.db.ExecContext(ctx, q, roomID, before.UnixMicro())
+	if err != nil {
+		return 0, fmt.Errorf("delete older than: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}

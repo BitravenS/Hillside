@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -66,6 +68,166 @@ func (p *PeerManager) EnqueueUserEntry(ctx context.Context, user *models.User) e
 	default:
 		return errors.New("peer manager write queue full")
 	}
+}
+
+func (s *Store) SaveUser(ctx context.Context, user *models.User) error {
+	pid := user.PeerID
+	dilithiumPub := user.DilithiumPub
+	kyberPub := user.KyberPub
+	libpub := user.Libp2pPub
+	name := user.Username
+	color := user.PreferredColor
+	lastSeen := time.Now().UnixMicro()
+
+	const q = `
+	INSERT OR REPLACE INTO peers
+	(peer_id, dilithium_pub, kyber_pub, libp2p_pub, username, color, last_seen, synced)
+	VALUES (?, ?, ?, ?, ?, ?,?,?);
+`
+	_, err := s.db.ExecContext(ctx, q,
+		pid,
+		dilithiumPub,
+		kyberPub,
+		libpub,
+		name,
+		color,
+		lastSeen,
+		1,
+	)
+	if err != nil {
+		return fmt.Errorf("insert user: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) GetUserByID(ctx context.Context, peerID string) (*models.User, error) {
+	const q = `
+SELECT peer_id, dilithium_pub, kyber_pub, libp2p_pub, username, color, last_seen, synced
+	FROM peers
+	WHERE peer_id = ?
+	LIMIT 1;
+`
+	rows, err := s.db.QueryContext(ctx, q, peerID)
+	if err != nil {
+		return nil, fmt.Errorf("select user by id: %w", err)
+	}
+
+	defer rows.Close()
+	var out *models.User
+	for rows.Next() {
+		var (
+			peerID       string
+			dilithiumPub []byte
+			kyberPub     []byte
+			libp2pPub    []byte
+			username     sql.NullString
+			color        sql.NullString
+			lastSeen     sql.NullInt64
+			synced       sql.NullInt64
+		)
+		if err := rows.Scan(&peerID, &dilithiumPub, &kyberPub, &libp2pPub, &username, &color, &lastSeen, &synced); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		out = &models.User{
+			PeerID:         peerID,
+			DilithiumPub:   dilithiumPub,
+			KyberPub:       kyberPub,
+			Libp2pPub:      libp2pPub,
+			Username:       username.String,
+			PreferredColor: color.String,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) GetAllUsers(ctx context.Context) ([]*models.User, error) {
+	const q = `
+	SELECT peer_id, dilithium_pub, kyber_pub, libp2p_pub, username, color, last_seen, synced
+	FROM peers;
+`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("select all users: %w", err)
+	}
+
+	defer rows.Close()
+	var out []*models.User
+	for rows.Next() {
+		var (
+			id           int64
+			peerID       string
+			dilithiumPub []byte
+			kyberPub     []byte
+			libp2pPub    []byte
+			username     sql.NullString
+			color        sql.NullString
+			lastSeen     sql.NullInt64
+			synced       sql.NullInt64
+		)
+		if err := rows.Scan(&id, &peerID, &dilithiumPub, &kyberPub, &libp2pPub, &username, &color, &lastSeen, &synced); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		m := &models.User{
+			PeerID:         peerID,
+			DilithiumPub:   dilithiumPub,
+			KyberPub:       kyberPub,
+			Libp2pPub:      libp2pPub,
+			Username:       username.String,
+			PreferredColor: color.String,
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) GetLastSeenUsers(ctx context.Context, since time.Time) ([]*models.User, error) {
+	sinceUnix := since.UnixMicro()
+	const q = `
+SELECT peer_id, dilithium_pub, kyber_pub, libp2p_pub, username, color, last_seen, synced
+	FROM peers
+	WHERE last_seen >= ?;
+`
+	rows, err := s.db.QueryContext(ctx, q, sinceUnix)
+	if err != nil {
+		return nil, fmt.Errorf("select users by last seen: %w", err)
+	}
+	defer rows.Close()
+	var out []*models.User
+	for rows.Next() {
+		var (
+			id           int64
+			peerID       string
+			dilithiumPub []byte
+			kyberPub     []byte
+			libp2pPub    []byte
+			username     sql.NullString
+			color        sql.NullString
+			lastSeen     sql.NullInt64
+			synced       sql.NullInt64
+		)
+		if err := rows.Scan(&id, &peerID, &dilithiumPub, &kyberPub, &libp2pPub, &username, &color, &lastSeen, &synced); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		m := &models.User{
+			PeerID:         peerID,
+			DilithiumPub:   dilithiumPub,
+			KyberPub:       kyberPub,
+			Libp2pPub:      libp2pPub,
+			Username:       username.String,
+			PreferredColor: color.String,
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (p *PeerManager) peerWriteWorker(store *Store) {

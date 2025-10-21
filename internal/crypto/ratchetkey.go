@@ -1,4 +1,4 @@
-package p2p
+package crypto
 
 import (
 	"crypto/hmac"
@@ -8,11 +8,6 @@ import (
 
 	"golang.org/x/crypto/hkdf"
 )
-
-type RoomRatchet struct {
-	ChainKey []byte // secret state
-	Index    uint64 // message count
-}
 
 func (r *RoomRatchet) NextKey() (msgKey, nonce []byte, err error) {
 
@@ -38,3 +33,14 @@ func (r *RoomRatchet) NextKey() (msgKey, nonce []byte, err error) {
 	return
 }
 
+func (r *RoomRatchet) Clone() *RoomRatchet {
+	if r == nil {
+		return nil
+	}
+
+	clone := &RoomRatchet{
+		ChainKey: append([]byte{}, r.ChainKey...),
+		Index:    r.Index,
+	}
+	return clone
+}

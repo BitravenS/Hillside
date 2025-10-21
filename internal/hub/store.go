@@ -2,7 +2,6 @@ package hub
 
 import (
 	"hillside/internal/models"
-	"hillside/internal/utils"
 	"log"
 	"sync"
 )
@@ -43,7 +42,7 @@ func (hs *HubStore) CreateServer(server *models.ServerMeta) error {
 
 	if _, exists := hs.servers[server.ID]; exists {
 		log.Printf("[STORE] CreateServer failed - Server ID %s already exists", server.ID)
-		return utils.DuplicateID
+		return ErrDuplicateID
 	}
 
 	hs.servers[server.ID] = server
@@ -60,7 +59,7 @@ func (hs *HubStore) ListRooms(serverID string) ([]*models.RoomMeta, error) {
 	server, exists := hs.servers[serverID]
 	if !exists {
 		log.Printf("[STORE] ListRooms failed - Server %s not found", serverID)
-		return nil, utils.ServerNotFound
+		return nil, models.ErrServerNotFound
 	}
 
 	rooms := make([]*models.RoomMeta, 0, len(server.Rooms))
@@ -82,13 +81,13 @@ func (hs *HubStore) CreateRoom(serverID string, room *models.RoomMeta) error {
 	server, exists := hs.servers[serverID]
 	if !exists {
 		log.Printf("[STORE] CreateRoom failed - Server %s not found", serverID)
-		return utils.ServerNotFound
+		return models.ErrServerNotFound
 	}
 
 	if _, exists := server.Rooms[room.ID]; exists {
 		log.Printf("[STORE] CreateRoom failed - Room ID %s already exists in server %s",
 			room.ID, serverID)
-		return utils.DuplicateID
+		return ErrDuplicateID
 	}
 
 	server.Rooms[room.ID] = room
@@ -106,7 +105,7 @@ func (hs *HubStore) GetServer(serverID string) (*models.ServerMeta, error) {
 	server, exists := hs.servers[serverID]
 	if !exists {
 		log.Printf("[STORE] GetServer failed - Server %s not found", serverID)
-		return nil, utils.ServerNotFound
+		return nil, models.ErrServerNotFound
 	}
 
 	log.Printf("[STORE] GetServer returning server ID: %s, Name: '%s'", server.ID, server.Name)
@@ -122,13 +121,13 @@ func (hs *HubStore) GetRoom(serverID, roomID string) (*models.RoomMeta, error) {
 	server, exists := hs.servers[serverID]
 	if !exists {
 		log.Printf("[STORE] GetRoom failed - Server %s not found", serverID)
-		return nil, utils.ServerNotFound
+		return nil, models.ErrServerNotFound
 	}
 
 	room, exists := server.Rooms[roomID]
 	if !exists {
 		log.Printf("[STORE] GetRoom failed - Room %s not found in server %s", roomID, serverID)
-		return nil, utils.RoomNotFound
+		return nil, models.ErrRoomNotFound
 	}
 
 	log.Printf("[STORE] GetRoom returning room ID: %s, Name: '%s'", room.ID, room.Name)

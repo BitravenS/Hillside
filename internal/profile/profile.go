@@ -147,7 +147,7 @@ func LoadProfile(usrname string, pass string, path string) (*models.Keybag, *mod
 	passKey := argon2.IDKey([]byte(pass), prof.PasswordSalt, 1, 64*1024, 4, 32)
 	check := argon2.IDKey([]byte(pass), prof.PasswordSalt, 3, 8*1024, 2, 32)
 	if !hmac.Equal(check, prof.PasswordChecksum) {
-		return nil, nil, utils.InvalidPassword
+		return nil, nil, ErrInvalidPassword
 	}
 
 	aead, err := chacha.New(passKey)
@@ -190,8 +190,8 @@ func LoadProfile(usrname string, pass string, path string) (*models.Keybag, *mod
 	}
 
 	kb := &models.Keybag{
-		DilithiumPriv: dilPriv,
-		KyberPriv:     kemPriv,
+		DilithiumPriv: dilPrivBytes,
+		KyberPriv:     kemPrivBytes,
 		Libp2pPriv:    libPriv,
 	}
 	dilPub := dilPriv.Public().(*mode2.PublicKey)
@@ -222,4 +222,3 @@ func LoadProfile(usrname string, pass string, path string) (*models.Keybag, *mod
 
 	return kb, usr, nil
 }
-

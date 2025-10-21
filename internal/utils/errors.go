@@ -5,15 +5,6 @@ import (
 	"fmt"
 )
 
-var (
-	ProfileNotFound   = errors.New("profile not found")
-	HistoryDBNotFound = errors.New("history db not found")
-	InvalidPassword   = errors.New("invalid password")
-	ServerNotFound    = errors.New("server not found")
-	RoomNotFound      = errors.New("room not found")
-	DuplicateID       = errors.New("duplicate ID detected")
-)
-
 func ThemeError(message string) error {
 	return fmt.Errorf("theme error: %s", message)
 }
@@ -55,4 +46,34 @@ func IsSecurityError(err error) bool {
 
 func SendMessageError(message string) error {
 	return fmt.Errorf("send message error: %s", message)
+}
+
+type HillsideError struct {
+	base    string
+	details string
+}
+
+func NewHillsideError(base string) *HillsideError {
+	return &HillsideError{base: "networking: " + base}
+}
+
+func (e *HillsideError) WithDetails(details string) *HillsideError {
+	return &HillsideError{
+		base:    e.base,
+		details: details,
+	}
+}
+
+func (e *HillsideError) Error() string {
+	if e.details != "" {
+		return fmt.Sprintf("%s: %s", e.base, e.details)
+	}
+	return e.base
+}
+
+func (e *HillsideError) Is(target error) bool {
+	if target == nil {
+		return false
+	}
+	return e.base == target.Error()
 }

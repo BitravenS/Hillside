@@ -1,3 +1,7 @@
+/* Package p2p implements a libp2p-based peer-to-peer node with DHT and PubSub capabilities.
+* It provides methods to initialize the host, DHT, and PubSub, as well as to send RPC calls to a hub node
+* aswell as helper functions for session management and peer discovery.
+* */
 package p2p
 
 import (
@@ -16,24 +20,13 @@ import (
 
 const protocolID = "/hillside/hub/1.0.0"
 
-type Topics struct {
-	ServersTopic    *pubsub.Topic
-	RekeyTopic      *pubsub.Topic
-	ChatTopic       *pubsub.Topic
-	RoomsTopic      *pubsub.Topic
-	MembersTopic    *pubsub.Topic
-	CatchUpTopic    *pubsub.Topic
-	UserUpdateTopic *pubsub.Topic
-}
-
 type Node struct {
-	Host   host.Host
-	DHT    *dht.IpfsDHT
-	PS     *pubsub.PubSub
-	Ctx    context.Context
-	PK     lib.PrivKey
-	Hub    *peer.AddrInfo
-	Topics Topics
+	Host host.Host
+	DHT  *dht.IpfsDHT
+	PS   *pubsub.PubSub
+	Ctx  context.Context
+	PK   lib.PrivKey
+	Hub  *peer.AddrInfo
 }
 
 func (n *Node) InitHost(listenAddrs []string) error {
@@ -93,16 +86,19 @@ func (n *Node) InitNode() error {
 	return nil
 }
 
-func (n *Node) SendRPC(method string, params interface{}, out interface{}) error {
+func (n *Node) SendRPC(method string, params, out any) error {
 	pi := n.Hub
 
 	s, err := n.Host.NewStream(n.Ctx, pi.ID, protocol.ID(protocolID))
+	if err != nil {
+		return err
+	}
 	defer s.Close()
 
 	// envelope
 	env := struct {
-		Method string      `json:"method"`
-		Params interface{} `json:"params"`
+		Method string `json:"method"`
+		Params any    `json:"params"`
 	}{method, params}
 
 	enc := json.NewEncoder(s)

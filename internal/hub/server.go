@@ -267,7 +267,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 				Members:      map[string]models.Member{},
 			}
 			err := s.Store.CreateRoom(req.ServerID, rm)
-			if err == utils.ServerNotFound {
+			if err == models.ErrServerNotFound {
 				log.Printf("[HUB] RPC ERROR: CreateRoom failed - Server %s not found", req.ServerID)
 				encoder.Encode(models.CreateRoomResponse{Error: "Server not found"})
 				break
@@ -347,7 +347,9 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 			resp.Room = room
 		}
 		if resp.Room != nil {
-			resp.Room.Members = map[string]models.Member{} // Don't leak member info
+			roomCopy := *resp.Room
+			roomCopy.Members = map[string]models.Member{} // Don't leak member info
+			resp.Room = &roomCopy
 		}
 		resp.Room.Members = map[string]models.Member{} // Don't leak member info
 		if err := encoder.Encode(resp); err != nil {
@@ -387,6 +389,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 			members = append(members, pi)
 		}
 		encoder.Encode(models.ListRoomMembersResponse{Members: members})
+		log.Printf("[HUB] RPC: ListRoomMembers returned %d members for room %s/%s to %s", len(members), req.ServerID, req.RoomID, remotePeer.String())
 
 	default:
 		log.Printf("[HUB] RPC ERROR: Unknown method '%s' called by %s",
@@ -409,6 +412,7 @@ func (s *HubServer) AdvertiseNewcomers(room *models.RoomMeta, serverID string) e
 		return fmt.Errorf("room %s in server %s has nil members", room.ID, serverID)
 	}
 	targets := room.Members
+	log.Printf("[HUB] AdvertiseNewcomers called for room %s, advertising %d members", room.ID, len(targets))
 	MemberTopic := p2p.MembersTopic(serverID, room.ID)
 	s.mu.Lock()
 	top, ok := s.topicCache[MemberTopic]
