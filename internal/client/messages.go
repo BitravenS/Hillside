@@ -15,6 +15,9 @@ func MarshalEnvelope(msg models.Message, sender models.User, sigPKBlob []byte) (
 		return nil, nil, err
 	}
 	sig, err := crypto.Sign(payload, sigPKBlob)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	env := models.Envelope{
 		Type:      msg.Type(),

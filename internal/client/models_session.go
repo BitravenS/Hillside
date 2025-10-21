@@ -9,8 +9,6 @@ import (
 	"hillside/internal/utils"
 )
 
-// models.go types used in client session management
-
 type Current struct {
 	Room   *RoomSession
 	Server *ServerSession

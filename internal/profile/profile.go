@@ -1,98 +1,56 @@
 package profile
 
 import (
-	"crypto/hmac"
-	"crypto/rand"
 	"encoding/json"
 	"os"
 
+	"hillside/internal/crypto"
 	"hillside/internal/models"
 	"hillside/internal/utils"
-
-	kyber "github.com/cloudflare/circl/kem/kyber/kyber1024"
-	"github.com/cloudflare/circl/sign/dilithium/mode2"
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"golang.org/x/crypto/argon2"
-	chacha "golang.org/x/crypto/chacha20poly1305"
 )
-
-type Profile struct {
-	Username         string `json:"username"`
-	PasswordSalt     []byte `json:"password_salt"`
-	PasswordChecksum []byte `json:"password_checksum"`
-	DilithiumPrivEnc []byte `json:"dilithium_priv_enc"` // encrypted w/ password
-	KyberPrivEnc     []byte `json:"kyber_priv_enc"`     // encrypted w/ password
-	Libp2pPrivEnc    []byte `json:"libp2p_priv_enc"`    // encrypted w/ password
-	PeerID           string `json:"peer_id"`
-}
 
 func GenerateProfile(username string, pass string) (*Profile, error) {
 
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		return nil, err
+	passKey, unlocker, salt, err := crypto.GenPasskeys(pass, nil) // idk what the unlocker is for tbh
+	if err != nil {
+		return nil, ErrProfileCreation.WithDetails(err.Error())
 	}
-	passKey := argon2.IDKey([]byte(pass), salt, 1, 64*1024, 4, 32)
-	unlocker := argon2.IDKey([]byte(pass), salt, 3, 8*1024, 2, 32)
 
 	// Key generation
-	_, dilPriv, err := mode2.GenerateKey(rand.Reader)
+	_, dilPrivBytes, err := crypto.GenSignKey()
 	if err != nil {
-		return nil, err
+		return nil, ErrProfileCreation.WithDetails(err.Error())
 	}
 
-	_, kemPriv, err := kyber.GenerateKeyPair(rand.Reader)
+	_, kemPrivBytes, err := crypto.GenKEMKey()
 	if err != nil {
-		return nil, err
+		return nil, ErrProfileCreation.WithDetails(err.Error())
 	}
 
-	libPriv, _, err := crypto.GenerateKeyPair(crypto.Ed25519, -1)
+	libPrivBytes, _, pid, err := crypto.GenP2PKey()
 	if err != nil {
-		return nil, err
+		return nil, ErrProfileCreation.WithDetails(err.Error())
 	}
 
-	pid, err := peer.IDFromPrivateKey(libPriv)
+	aead, err := crypto.DeriveChaChaKey(passKey)
 	if err != nil {
-		return nil, err
+		return nil, ErrProfileCreation.WithDetails(err.Error())
 	}
 
-	aead, err := chacha.New(passKey)
+	dilEnc, err := crypto.SealAEAD(dilPrivBytes, aead)
 	if err != nil {
-		return nil, err
+		return nil, ErrProfileCreation.WithDetails(err.Error())
 	}
 
-	n1 := make([]byte, aead.NonceSize())
-	if _, err := rand.Read(n1); err != nil {
-		return nil, err
-	}
-
-	dilPrivBytes, err := dilPriv.MarshalBinary()
+	kemEnc, err := crypto.SealAEAD(kemPrivBytes, aead)
 	if err != nil {
-		return nil, err
+		return nil, ErrProfileCreation.WithDetails(err.Error())
 	}
-	dilEnc := aead.Seal(n1, n1, dilPrivBytes, nil)
 
-	kemPrivBytes, err := kemPriv.MarshalBinary()
+	libEnc, err := crypto.SealAEAD(libPrivBytes, aead)
 	if err != nil {
-		return nil, err
+		return nil, ErrProfileCreation.WithDetails(err.Error())
 	}
-	n2 := make([]byte, aead.NonceSize())
-	if _, err := rand.Read(n2); err != nil {
-		return nil, err
-	}
-
-	kemEnc := aead.Seal(n2, n2, kemPrivBytes, nil)
-
-	libPrivBytes, err := crypto.MarshalPrivateKey(libPriv)
-	if err != nil {
-		return nil, err
-	}
-	n3 := make([]byte, aead.NonceSize())
-	if _, err := rand.Read(n3); err != nil {
-		return nil, err
-	}
-	libEnc := aead.Seal(n3, n3, libPrivBytes, nil)
 
 	prof := &Profile{
 		Username:         username,
@@ -101,7 +59,7 @@ func GenerateProfile(username string, pass string) (*Profile, error) {
 		DilithiumPrivEnc: dilEnc,
 		KyberPrivEnc:     kemEnc,
 		Libp2pPrivEnc:    libEnc,
-		PeerID:           pid.String(),
+		PeerID:           pid,
 	}
 
 	// Saving to disk
@@ -118,7 +76,6 @@ func GenerateProfile(username string, pass string) (*Profile, error) {
 	defer file.Close()
 
 	enc := json.NewEncoder(file)
-	enc.SetIndent("", "  ")
 	if err := enc.Encode(prof); err != nil {
 		return nil, err
 	}
@@ -129,12 +86,12 @@ func GenerateProfile(username string, pass string) (*Profile, error) {
 func LoadProfile(usrname string, pass string, path string) (*models.Keybag, *models.User, error) {
 	profilePath, err := getProfilePath(usrname, path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrProfileLoad.WithDetails(err.Error())
 	}
 
 	file, err := os.Open(*profilePath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrProfileNotFound
 	}
 
 	defer file.Close()
@@ -144,71 +101,50 @@ func LoadProfile(usrname string, pass string, path string) (*models.Keybag, *mod
 	if err := dec.Decode(&prof); err != nil {
 		return nil, nil, err
 	}
-	passKey := argon2.IDKey([]byte(pass), prof.PasswordSalt, 1, 64*1024, 4, 32)
-	check := argon2.IDKey([]byte(pass), prof.PasswordSalt, 3, 8*1024, 2, 32)
-	if !hmac.Equal(check, prof.PasswordChecksum) {
-		return nil, nil, ErrInvalidPassword
+	passKey, _, _, err := crypto.GenPasskeys(pass, prof.PasswordSalt)
+	if err != nil {
+		return nil, nil, ErrProfileLoad.WithDetails(err.Error())
 	}
 
-	aead, err := chacha.New(passKey)
+	aead, err := crypto.DeriveChaChaKey(passKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrProfileLoad.WithDetails(err.Error())
 	}
 
-	n1 := prof.DilithiumPrivEnc[:aead.NonceSize()]
-	dilPrivBytes, err := aead.Open(nil, n1, prof.DilithiumPrivEnc[aead.NonceSize():], nil)
+	dilPrivBytes, err := crypto.OpenAEAD(prof.DilithiumPrivEnc, aead)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrInvalidPassword.WithDetails(err.Error())
 	}
 
-	n2 := prof.KyberPrivEnc[:aead.NonceSize()]
-	kemPrivBytes, err := aead.Open(nil, n2, prof.KyberPrivEnc[aead.NonceSize():], nil)
+	kemPrivBytes, err := crypto.OpenAEAD(prof.KyberPrivEnc, aead)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrInvalidPassword.WithDetails(err.Error())
 	}
 
-	n3 := prof.Libp2pPrivEnc[:aead.NonceSize()]
-	libPrivBytes, err := aead.Open(nil, n3, prof.Libp2pPrivEnc[aead.NonceSize():], nil)
+	libPrivBytes, err := crypto.OpenAEAD(prof.Libp2pPrivEnc, aead)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrInvalidPassword.WithDetails(err.Error())
 	}
 
-	dilPriv, err := mode2.Scheme().UnmarshalBinaryPrivateKey(dilPrivBytes)
-
+	_, _, dilPubBytes, err := crypto.DeriveSignKey(dilPrivBytes)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrProfileLoad.WithDetails("Profile file is corrupted: " + err.Error())
 	}
 
-	kemPriv, err := kyber.Scheme().UnmarshalBinaryPrivateKey(kemPrivBytes)
+	_, _, kyberPubBytes, err := crypto.DeriveKEMKey(kemPrivBytes)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrProfileLoad.WithDetails("Profile file is corrupted: " + err.Error())
 	}
 
-	libPriv, err := crypto.UnmarshalPrivateKey(libPrivBytes)
+	libPriv, _, libPubBytes, err := crypto.DeriveP2PKey(libPrivBytes)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrProfileLoad.WithDetails("Profile file is corrupted: " + err.Error())
 	}
 
 	kb := &models.Keybag{
 		DilithiumPriv: dilPrivBytes,
 		KyberPriv:     kemPrivBytes,
 		Libp2pPriv:    libPriv,
-	}
-	dilPub := dilPriv.Public().(*mode2.PublicKey)
-	dilPubBytes, err := dilPub.MarshalBinary()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	kyberPub := kemPriv.Public().(*kyber.PublicKey)
-	libPub := libPriv.GetPublic()
-	libPubBytes, err := crypto.MarshalPublicKey(libPub)
-	if err != nil {
-		return nil, nil, err
-	}
-	kyberPubBytes, err := kyberPub.MarshalBinary()
-	if err != nil {
-		return nil, nil, err
 	}
 
 	usr := &models.User{

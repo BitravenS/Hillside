@@ -48,7 +48,7 @@ func (cli *Client) chatHandler() error {
 				return err
 			}
 			senderID := msg.ReceivedFrom
-			err = cli.validateChatMessage(env, message.(*models.ChatMessage), senderID)
+			err = cli.validateChatMessage(env, message.(*models.ChatMessage), senderID.String())
 			if err != nil {
 
 				if utils.IsValidationError(err) {
