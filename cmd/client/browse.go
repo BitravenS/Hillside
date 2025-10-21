@@ -356,9 +356,8 @@ func (cli *Client) StartAutoRefresh() {
 		cli.Session.Log.Logf("Failed to join servers topic: %v", err)
 		return
 	}
-	cli.Node.Topics.ServersTopic = top
 
-	sub, err := cli.Node.Topics.ServersTopic.Subscribe()
+	sub, err := top.Subscribe()
 	if err != nil {
 		cli.Session.Log.Logf("Failed to subscribe to servers topic: %v", err)
 		return

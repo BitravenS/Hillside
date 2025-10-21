@@ -15,11 +15,11 @@ import (
 
 // ThemeConfig represents a theme loaded from YAML
 type ThemeConfig struct {
-	Name        string                 `yaml:"name"`
-	Description string                 `yaml:"description"`
-	Author      string                 `yaml:"author"`
-	Version     string                 `yaml:"version"`
-	Colors      map[string]interface{} `yaml:"colors"`
+	Name        string         `yaml:"name"`
+	Description string         `yaml:"description"`
+	Author      string         `yaml:"author"`
+	Version     string         `yaml:"version"`
+	Colors      map[string]any `yaml:"colors"`
 }
 
 // Theme represents a processed theme with tcell colors
@@ -63,10 +63,25 @@ func LoadTheme(themePath string) (*Theme, error) {
 	return theme, nil
 }
 
-// LoadThemeFromDir loads a theme by name from a themes directory
 func LoadThemeFromDir(themesDir, themeName string) (*Theme, error) {
 	themePath := filepath.Join(themesDir, themeName+".yaml")
-	return LoadTheme(themePath)
+	theme, err := LoadTheme(themePath)
+	if err != nil {
+		// Try loading from built-in themes
+		themesDir := filepath.Join("..", "..", "themes")
+		files, err := os.ReadDir(themesDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range files {
+			if !file.IsDir() && strings.HasSuffix(file.Name(), ".yaml") {
+				themePath := filepath.Join(themesDir, file.Name())
+				return LoadTheme(themePath)
+			}
+		}
+		return nil, fmt.Errorf("no .yaml theme found in %s", themesDir)
+	}
+	return theme, nil
 }
 
 // GetColor returns a color by name, with fallback to default
@@ -201,26 +216,26 @@ func parseRGBFunction(rgbStr string) (tcell.Color, error) {
 }
 
 // parseColorMap parses color maps with r, g, b values
-func parseColorMap(colorMap map[string]interface{}) (tcell.Color, error) {
+func parseColorMap(colorMap map[string]any) (tcell.Color, error) {
 	rVal, rExists := colorMap["r"]
 	gVal, gExists := colorMap["g"]
 	bVal, bExists := colorMap["b"]
 
 	if !rExists || !gExists || !bExists {
-		return tcell.ColorWhite, utils.ThemeError(fmt.Sprintf("RGB color map must have r, g, b values"))
+		return tcell.ColorWhite, utils.ThemeError("RGB COLOR MAP MUST HAVE R, G, B VALUES")
 	}
 
 	r, ok := rVal.(int)
 	if !ok {
-		return tcell.ColorWhite, utils.ThemeError(fmt.Sprintf("red value must be an integer"))
+		return tcell.ColorWhite, utils.ThemeError("RED VALUE MUST BE AN INTEGER")
 	}
 	g, ok := gVal.(int)
 	if !ok {
-		return tcell.ColorWhite, utils.ThemeError(fmt.Sprintf("green value must be an integer"))
+		return tcell.ColorWhite, utils.ThemeError("GREEN VALUE MUST BE AN INTEGER")
 	}
 	b, ok := bVal.(int)
 	if !ok {
-		return tcell.ColorWhite, utils.ThemeError(fmt.Sprintf("blue value must be an integer"))
+		return tcell.ColorWhite, utils.ThemeError("BLUE VALUE MUST BE AN INTEGER")
 	}
 
 	return tcell.NewRGBColor(int32(r), int32(g), int32(b)), nil
@@ -272,4 +287,3 @@ func (t *Theme) ModalColors() (bg, text, border tcell.Color) {
 func (t *Theme) BorderColors() (normal, focus tcell.Color) {
 	return t.GetColor("border"), t.GetColor("border-focus")
 }
-

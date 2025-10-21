@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"hillside/internal/models"
@@ -123,9 +124,6 @@ func (c *ChatScreen) NewChatScreen() {
 		AddItem(c.chatView, 0, 4, true)
 	c.App.SetFocus(c.msgInput)
 	if c.inputHandler != nil {
-		fmt.Printf("Chat input handler set already: %p\n", c.inputHandler)
-		fmt.Printf("Is layout initialized? %v\n", c.layout != nil)
-
 		c.inputHandler()
 	}
 
@@ -133,9 +131,6 @@ func (c *ChatScreen) NewChatScreen() {
 
 func (c *ChatScreen) HookupInputHandler() {
 	if c.inputHandler != nil {
-		fmt.Printf("Chat input handler set already: %p\n", c.inputHandler)
-		fmt.Printf("Is layout initialized? %v\n", c.layout != nil)
-
 		c.inputHandler()
 	}
 }
@@ -184,7 +179,7 @@ func (c *ChatScreen) UpdateRoomList(rooms []models.RoomMeta) {
 }
 
 func (cli *Client) refreshRoomList() {
-	roomResp, err := cli.requestRooms(cli.Session.Server.ID)
+	roomResp, err := cli.requestRooms(cli.getServerID())
 	cli.UI.App.QueueUpdateDraw(func() {
 		if err != nil {
 			cli.UI.ShowError("Server Error", err.Error(), "Go back to Browse view", 0, func() {
@@ -354,10 +349,9 @@ func (cli *Client) StartRoomAutoRefresh() {
 			select {
 			case <-ticker.C:
 				currentPage, _ := cli.UI.Pages.GetFrontPage()
-				cli.Session.Log.Logf("Auto-refresh tick on page: %s", currentPage)
 				if !isChatPageActive(currentPage) {
 					cli.Session.Log.Logf("Left chat page, stopping auto-refresh")
-					cancelRefresh() // This will break the message loop
+					cancelRefresh()
 					return
 				}
 			case <-refreshCtx.Done():
@@ -366,15 +360,18 @@ func (cli *Client) StartRoomAutoRefresh() {
 		}
 	}()
 
-	RoomsTopic := p2p.RoomsTopic(cli.Session.Server.ID)
-	top, err := cli.Node.PS.Join(RoomsTopic)
-	if err != nil {
-		cli.Session.Log.Logf("Failed to join rooms topic: %v", err)
-		return
-	}
-	cli.Node.Topics.RoomsTopic = top
+	if !cli.Session.Current.Server.Topics.HasTopic(models.TopicRooms) {
 
-	sub, err := cli.Node.Topics.RoomsTopic.Subscribe()
+		RoomsTopic := p2p.RoomsTopic(cli.getServerID())
+		top, err := cli.Node.PS.Join(RoomsTopic)
+		if err != nil {
+			cli.Session.Log.Logf("Failed to join rooms topic: %v", err)
+			return
+		}
+		cli.Session.Current.Server.Topics.SetTopic(models.TopicRooms, top)
+	}
+
+	sub, err := cli.Session.Current.Server.Topics.GetTopic(models.TopicRooms).Subscribe()
 	if err != nil {
 		cli.Session.Log.Logf("Failed to subscribe to rooms topic: %v", err)
 		return

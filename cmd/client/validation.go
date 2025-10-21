@@ -1,14 +1,15 @@
 package main
 
 import (
+	"fmt"
+	"time"
+
 	"hillside/internal/models"
 	"hillside/internal/utils"
-	"time"
 
 	"github.com/cloudflare/circl/sign/dilithium/mode2"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
-
 
 func (cli *Client) validateChatMessageIntegrity(env *models.Envelope, msg *models.ChatMessage) error {
 	if msg == nil {
@@ -30,13 +31,12 @@ func (cli *Client) validateChatMessageIntegrity(env *models.Envelope, msg *model
 	return nil
 }
 
-
-func (cli *Client) validateMessageSecurity(env *models.Envelope, senderID peer.ID) error {
-	if env.Sender.PeerID != senderID.String() {
+func (cli *Client) validateMessageSecurity(env *models.Envelope, strSenderID string) error {
+	if env.Sender.PeerID != strSenderID {
 		return utils.SecurityError("Sender ID does not match the message sender")
 	}
-	if env.Timestamp > time.Now().Unix() {
-		return utils.SecurityError("Message timestamp is in the future")
+	if env.Timestamp > time.Now().UnixMicro() {
+		return utils.SecurityError(fmt.Sprintf("Message timestamp %d is in the future, now is %d", env.Timestamp, time.Now().UnixMicro()))
 	}
 
 	//verify signature
@@ -62,7 +62,7 @@ func (cli *Client) validateChatMessage(env *models.Envelope, msg *models.ChatMes
 	if err := cli.validateChatMessageIntegrity(env, msg); err != nil {
 		return err
 	}
-	if err := cli.validateMessageSecurity(env, senderID); err != nil {
+	if err := cli.validateMessageSecurity(env, senderID.String()); err != nil {
 		return err
 	}
 	return nil
