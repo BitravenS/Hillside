@@ -53,9 +53,7 @@ func StartClientApp(logPort int) {
 	fmt.Println("Starting Hillside Client...")
 	client.UI.ChatScreen.InputHandler = client.ChatInputHandler
 	client.UI.ChatScreen.HookupInputHandler()
-	node := &p2p.Node{
-		Ctx: ctx,
-	}
+	node := p2p.NewNode(ctx)
 	client.Node = node
 
 	rl, err := utils.NewRemoteLogger(logPort)

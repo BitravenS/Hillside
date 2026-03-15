@@ -14,7 +14,10 @@ func SealAEAD(data []byte, aead cipher.AEAD) ([]byte, error) {
 	return ct, nil
 }
 
-func OpenAEAD(encData []byte, aead cipher.AEAD) ([]byte, error) {
-	nonce := encData[:aead.NonceSize()]
-	return aead.Open(nil, nonce, encData[aead.NonceSize():], nil)
+func OpenAEAD(encData, nonce []byte, aead cipher.AEAD) ([]byte, error) {
+	if nonce == nil {
+		nonce := encData[:aead.NonceSize()]
+		return aead.Open(nil, nonce, encData[aead.NonceSize():], nil)
+	}
+	return aead.Open(nil, nonce, encData, nil)
 }

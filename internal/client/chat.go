@@ -1,45 +1,37 @@
 package client
 
 import (
-	"fmt"
+	"context"
+	"errors"
 
 	"hillside/internal/crypto"
 	"hillside/internal/models"
 	"hillside/internal/p2p"
-	"hillside/internal/utils"
 )
 
-func (cli *Client) chatHandler() error {
-	/*
-		kyberPriv, ok := cli.Keybag.KyberPriv.(*kyber1024.PrivateKey)
-		if !ok {
-			return errors.New("invalid KyberPriv type")
-		}
-			if err := cli.Node.ListenForRekeys(cli.GetServerID(), cli.GetRoomID(), kyberPriv); err != nil {
-				return err
-			}
-	*/
-	if !cli.Session.Current.Room.Topics.HasTopic(models.TopicChat) {
-		chatTopic := p2p.ChatTopic(cli.GetServerID(), cli.GetRoomID())
-		topic, err := cli.Node.PS.Join(chatTopic)
-		if err != nil {
-			return err
-		}
-		cli.Session.Current.Room.Topics.SetTopic(models.TopicChat, topic)
-	}
-	sub, err := cli.Session.Current.Room.Topics.GetTopic(models.TopicChat).Subscribe()
-	if err != nil {
-		return err
-	}
-	err = cli.parseAndDisplayDBMessages(cli.GetRoomID())
-	if err != nil {
-		return err
-	}
+func (cli *Client) chatHandler(ctx context.Context) error {
+	cli.Session.Log.Logf("Setting up chat handler for room %s on server %s", cli.GetRoomID(), cli.GetServerID())
 
-	// Recieve messages from the chat topic
+	err := setupRoomTopics(cli, models.TopicChat, p2p.ChatTopic(cli.GetServerID(), cli.GetRoomID()))
+	if err != nil {
+		return err
+	}
+	sub, err := subToRoomTopic(cli, models.TopicChat)
+	if err != nil {
+		return err
+	}
+	cli.Node.Subs = append(cli.Node.Subs, sub)
+	cli.UI.ChatScreen.ChatSection.Clear()
+	err = cli.fetchMessagesFromDB(cli.GetRoomID())
+	if err != nil {
+		return err
+	}
+	cli.displayCachedMessages()
+
 	go func() error {
 		for {
-			msg, err := sub.Next(cli.Node.Ctx)
+
+			msg, err := sub.Next(ctx)
 			if err != nil {
 				return nil
 			}
@@ -51,18 +43,20 @@ func (cli *Client) chatHandler() error {
 			err = cli.validateChatMessage(env, message.(*models.ChatMessage), senderID.String())
 			if err != nil {
 
-				if utils.IsValidationError(err) {
+				if errors.Is(err, ErrValidationIssue) {
 					cli.UI.ShowError("Validation Error", err.Error(), "OK", 0, nil)
-				}
-				if utils.IsSecurityError(err) {
+				} else if errors.Is(err, ErrSecurityIssue) {
 					cli.UI.ShowError("Security Error", err.Error(), "OK", 0, nil)
 					//TODO: Notify others
+				} else {
+					cli.UI.ShowError("Unknown Error", "An unknown error occurred: "+err.Error(), "OK", 0, nil)
 				}
+
 			}
 
 			castedMsg, ok := message.(*models.ChatMessage)
 			if ok {
-				pt, err := cli.decryptMessage(castedMsg)
+				pt, err := crypto.DecryptMessage(cli.Session.Current.Room.RoomRatchet, cli.Session.Current.Room.BackupRatchet, castedMsg)
 				if err != nil {
 					cli.UI.ShowError("Decryption Error", "Failed to decrypt message: "+err.Error(), "OK", 0, nil)
 					continue
@@ -78,47 +72,21 @@ func (cli *Client) chatHandler() error {
 				if err := cli.Session.SessionDB.History.EnqueueEnvelope(cli.Node.Ctx, env.Signature, env.Payload, env.Timestamp, env.Type, &castedMsg.ChainIndex, env.Sender.PeerID, cli.GetRoomID(), cli.GetServerID()); err != nil {
 					cli.UI.ShowError("Storage Error", "Failed to store message: "+err.Error(), "OK", 0, nil)
 				}
-				//line := fmt.Sprintf("[%d] %s: %s", env.Timestamp, env.Sender.Username, decMsg.Content)
-				formattedTime := utils.FormatPrettyTime(env.Timestamp)
-
-				prefColor := env.Sender.PreferredColor
-				if !utils.Contains(utils.BaseXtermAnsiColorNames, prefColor) {
-					prefColor = utils.GenerateRandomColor()
-				}
-				lineContent := fmt.Sprintf("[yellow][%s] [%s]%s:[white] %s", formattedTime, prefColor, env.Sender.Username, decMsg.Content)
-				cli.UI.App.QueueUpdateDraw(func() {
-					cli.UI.ChatScreen.ChatSection.AddItem(lineContent, "", 0, nil)
-
-				})
-
+				cli.DisplayMessage(env.Timestamp, env.Sender, decMsg)
 			}
-
 		}
 	}()
 	return nil
 }
 
-func (cli *Client) DisplayMessage(timestamp int64, sender models.User, decMsg *models.DecrypetMessage) {
-	formattedTime := utils.FormatPrettyTime(timestamp)
-
-	prefColor := sender.PreferredColor
-	if !utils.Contains(utils.BaseXtermAnsiColorNames, prefColor) {
-		prefColor = utils.GenerateRandomColor()
-	}
-	lineContent := fmt.Sprintf("[yellow][%s] [%s]%s:[white] %s", formattedTime, prefColor, sender.Username, decMsg.Content)
-
-	go func() {
-		cli.UI.App.QueueUpdateDraw(func() {
-			cli.UI.ChatScreen.ChatSection.AddItem(lineContent, "", 0, nil)
-		})
-
-	}()
-}
-
 func (cli *Client) SendMessageHandler(text string) error {
+	if cli.Session.Current.Room == nil {
+		cli.UI.ShowError("Error", "You must join a room before sending messages", "OK", 0, nil)
+		return ErrSendMessageFailed.WithDetails("no room joined")
+	}
 	if cli.Session.Current.Room.RoomRatchet == nil {
 		cli.UI.ShowError("Error", "You must join a room before sending messages", "OK", 0, nil)
-		return utils.SendMessageError("Room ratchet is not initialized. Join a room first.")
+		return ErrSendMessageFailed.WithDetails("room ratchet is nil")
 	}
 
 	ct, _, err := crypto.EncryptMessage(cli.Session.Current.Room.RoomRatchet, []byte(text))
@@ -144,6 +112,7 @@ func (cli *Client) SendMessageHandler(text string) error {
 		return err
 	}
 	err = cli.Session.SessionDB.History.EnqueueEnvelope(cli.Node.Ctx, env.Signature, env.Payload, env.Timestamp, env.Type, &msg.ChainIndex, env.Sender.PeerID, cli.GetRoomID(), cli.GetServerID())
+	cli.Session.Log.Logf("Sent message at %d: %s", env.Timestamp, text)
 	return err
 
 }

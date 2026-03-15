@@ -1,7 +1,12 @@
 package crypto
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+
 	"github.com/cloudflare/circl/sign/dilithium/mode2"
+
+	"hillside/internal/models"
 
 	chacha "golang.org/x/crypto/chacha20poly1305"
 )
@@ -52,4 +57,44 @@ func EncryptMessage(r *RoomRatchet, plaintext []byte) (ciphertext, nonce []byte,
 	ct := aead.Seal(nil, nonce, plaintext, nil)
 	return ct, nonce, nil
 
+}
+
+func DecryptMessage(r *RoomRatchet, rbackup *RoomRatchet, cm *models.ChatMessage) ([]byte, error) {
+	if r.Index > cm.ChainIndex {
+		r = rbackup.Clone()
+		if r.Index > cm.ChainIndex {
+			return nil, ErrDecryptionFailed.WithDetails("ratchet index is ahead of message index")
+		}
+	}
+	key, nonce, err := r.AdvanceTo(cm.ChainIndex)
+	if err != nil {
+		return nil, ErrDecryptionFailed.WithDetails(err.Error())
+
+	}
+	target := r.Index
+	if target > 10 {
+		target -= 10
+	} else {
+		target = 0
+	}
+	_, _, err = rbackup.AdvanceTo(target)
+	if err != nil {
+		return nil, ErrDecryptionFailed.WithDetails(err.Error())
+	}
+
+	aead, err := chacha.New(key)
+	if err != nil {
+		return nil, ErrDecryptionFailed.WithDetails(err.Error())
+	}
+	return aead.Open(nil, nonce, cm.Ciphertext, nil)
+
+}
+
+func HashWithSalt(data []byte) ([]byte, []byte, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, nil, err
+	}
+	hash := sha256.Sum256(append(salt, data...))
+	return hash[:], salt, nil
 }

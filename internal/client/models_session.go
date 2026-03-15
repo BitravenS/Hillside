@@ -10,8 +10,9 @@ import (
 )
 
 type Current struct {
-	Room   *RoomSession
-	Server *ServerSession
+	Room         *RoomSession
+	Server       *ServerSession
+	GlobalTopics *TopicCollection
 }
 
 type Session struct {
@@ -21,10 +22,11 @@ type Session struct {
 	Password  string
 	SessionDB *storage.SessionDB
 	Log       *utils.RemoteLogger
+	Contexts  Contexts
 }
 
 type TopicCollection struct {
-	topics map[string]*pubsub.Topic
+	topics map[models.TopicName]*pubsub.Topic
 }
 
 type RoomSession struct {

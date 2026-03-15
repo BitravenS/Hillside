@@ -1,9 +1,12 @@
 package models
 
+type TopicName string
+
 const (
-	TopicChat       = "chat"
-	TopicMembers    = "members"
-	TopicCatchUp    = "catchup"
-	TopicUserUpdate = "userupdate"
-	TopicRooms      = "rooms"
+	TopicChat       TopicName = "chat"
+	TopicMembers    TopicName = "members"
+	TopicCatchUp    TopicName = "catchup"
+	TopicUserUpdate TopicName = "userupdate"
+	TopicRooms      TopicName = "rooms"
+	TopicServers    TopicName = "servers"
 )

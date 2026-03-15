@@ -18,18 +18,21 @@ func NewHubStore() *HubStore {
 	}
 }
 
-func (hs *HubStore) ListServers() []*models.ServerMeta {
+func (hs *HubStore) ListServers(verbose bool) []*models.ServerMeta {
 	hs.mu.RLock()
 	defer hs.mu.RUnlock()
-
-	log.Printf("[STORE] ListServers called - %d servers in store", len(hs.servers))
+	if verbose {
+		log.Printf("[STORE] ListServers called - %d servers in store", len(hs.servers))
+	}
 
 	servers := make([]*models.ServerMeta, 0, len(hs.servers))
 	for _, server := range hs.servers {
 		servers = append(servers, server)
 	}
 
-	log.Printf("[STORE] ListServers returning %d servers", len(servers))
+	if verbose {
+		log.Printf("[STORE] ListServers returning %d servers", len(servers))
+	}
 	return servers
 }
 

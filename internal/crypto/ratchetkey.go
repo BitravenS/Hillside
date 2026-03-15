@@ -44,3 +44,16 @@ func (r *RoomRatchet) Clone() *RoomRatchet {
 	}
 	return clone
 }
+
+func (r *RoomRatchet) AdvanceTo(target uint64) ([]byte, []byte, error) {
+	var key, nonce []byte
+	var err error
+
+	for r.Index <= target {
+		key, nonce, err = r.NextKey()
+		if err != nil {
+			return nil, nil, ErrRatchetAdvance.WithDetails(err.Error())
+		}
+	}
+	return key, nonce, nil
+}

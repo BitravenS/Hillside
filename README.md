@@ -11,13 +11,12 @@ The most important features to be ready for release:
 - [x] Fix "Topic exists" when joining different rooms
 - [ ] Encrypt DB
 - [ ] Minimize duplicate information in messages
-- [ ] Reduce the signature size (2.4 Kb is waaay to big for each message)
 - [ ] Basic profile management
 - [ ] Sorting servers and rooms by most recently visited
 - [ ] Save favourite servers and rooms
 - [ ] Close open connections and pubsubs gracefully & shutdown client gracefully
 - [ ] Add basic room info to be displayed
-- [ ] Organize the packages and clean up the codebase
+- [x] Organize the packages and clean up the codebase
 
 ### Top Prio
 Somewhat necessary features to be rolled out gradually after release:
@@ -29,6 +28,7 @@ Somewhat necessary features to be rolled out gradually after release:
 - [ ] Add better security to Private servers and rooms (with SSS perhaps)
 - [ ] Add the possibility for rekeying (i.e. change the room key)
 - [ ] Add trustworthiness (i.e. someone sent a badly signed message or tried joining with a wrong key)
+- [ ] Add documentation
 
 
 ### Lower Prio & QoL

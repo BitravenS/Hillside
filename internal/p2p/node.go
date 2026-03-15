@@ -27,6 +27,14 @@ type Node struct {
 	Ctx  context.Context
 	PK   lib.PrivKey
 	Hub  *peer.AddrInfo
+	Subs []*pubsub.Subscription
+}
+
+func NewNode(ctx context.Context) *Node {
+	return &Node{
+		Ctx:  ctx,
+		Subs: make([]*pubsub.Subscription, 0),
+	}
 }
 
 func (n *Node) InitHost(listenAddrs []string) error {

@@ -13,58 +13,6 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-/*
-	TODO: Save to database instead of file
-
-*
-
-	func saveEncryptedSID(sid string, password string) error {
-		// Encrypt the SID with the password
-
-		salt := make([]byte, 16)
-		if _, err := rand.Read(salt); err != nil {
-			return err
-		}
-		passKey := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
-
-		aead, err := chacha.New(passKey)
-		if err != nil {
-			return err
-		}
-		n := make([]byte, aead.NonceSize())
-		if _, err := rand.Read(n); err != nil {
-			return err
-		}
-		encryptedSID := aead.Seal(n, n, []byte(sid), nil)
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		encPath := homeDir + fmt.Sprintf("/.hillside/%ssid.enc", utils.GenerateRandomID())
-		file, err := os.Create(encPath)
-		if err != nil {
-			return err
-		}
-
-		defer file.Close()
-		data := struct {
-			Salt  []byte `json:"salt"`
-			Nonce []byte `json:"nonce"`
-			SID   []byte `json:"sid"`
-		}{
-			Salt:  salt,
-			Nonce: n,
-			SID:   encryptedSID,
-		}
-		enc := json.NewEncoder(file)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(data); err != nil {
-			return err
-		}
-		return nil
-	}
-*/
-
 func (cli *Client) requestCatchUp(since, limit uint64) (*crypto.RoomRatchet, error) {
 	CatchupRespTopic := p2p.CatchUpResponseTopic(cli.GetServerID(), cli.GetRoomID(), cli.Node.Host.ID().String())
 	resptop, err := cli.Node.PS.Join(CatchupRespTopic)
@@ -75,6 +23,13 @@ func (cli *Client) requestCatchUp(since, limit uint64) (*crypto.RoomRatchet, err
 	if err != nil {
 		return nil, err
 	}
+
+	defer func() {
+		sub.Cancel()
+		resptop.Close()
+	}()
+
+	cli.Node.Subs = append(cli.Node.Subs, sub)
 	cli.Session.Log.Logf("Subscribed to catch-up response topic: %s", CatchupRespTopic)
 	req := &models.CatchUpRequest{}
 	data, _, err := MarshalEnvelope(req, *cli.User, cli.Keybag.DilithiumPriv)
@@ -120,12 +75,10 @@ func (cli *Client) requestCatchUp(since, limit uint64) (*crypto.RoomRatchet, err
 				return r, nil
 			}
 			catchUpMsgs, err := cli.Session.SessionDB.History.DecompressCatchUpPayload(cli.Node.Ctx, castMsg.CatchUpMessages, cli.GetRoomID(), cli.Session.SessionDB.Store)
-			cli.Session.Log.Logf("Recieved CatchUpMessages payload of length %d", len(castMsg.CatchUpMessages))
 			cli.Session.Log.Logf("Recieved %d catch-up messages", len(catchUpMsgs.ReturnedMessages))
 			if err != nil {
 				return r, fmt.Errorf("failed to decompress catch-up payload: %v", err)
 			}
-			cli.Session.Log.Logf("Successfully decompressed %d catch-up messages", len(catchUpMsgs.ReturnedMessages))
 			catchUpMsgs.SenderID = senderID.String()
 			for _, msg := range catchUpMsgs.ReturnedMessages {
 				valid := cli.validateCatchupMessageSecurity(&msg, msg.SenderID)
@@ -136,7 +89,7 @@ func (cli *Client) requestCatchUp(since, limit uint64) (*crypto.RoomRatchet, err
 				if err != nil {
 					cli.Session.Log.Logf("Failed to save catch-up message index %d: %v", *msg.ChainIndex, err)
 				}
-				cli.Session.Log.Logf("Saved catch-up message ID %d of type %s from sender %s", msg.ID, msg.MsgType, msg.SenderID)
+				cli.Session.Log.Logf("Saved catch-up message at time %d of type %s from sender %s", msg.Timestamp, msg.MsgType, msg.SenderID)
 			}
 			return r, nil
 		}
@@ -166,7 +119,6 @@ func (cli *Client) validateCatchupMessageSecurity(msg *models.StoredMessage, sen
 		Signature: msg.Signature,
 		Payload:   msg.Payload,
 	}
-	cli.Session.Log.Logf("Sender PeerID: '%s', Expected SenderID: '%s' | same ? %v", ephemeralEnv.Sender.PeerID, senderID, ephemeralEnv.Sender.PeerID == senderID)
 	valid := cli.validateMessageSecurity(ephemeralEnv, senderID)
 	if valid != nil {
 		cli.Session.Log.Logf("Catch-up message security validation failed: %v", valid)
@@ -244,84 +196,3 @@ func (cli *Client) helpCatchUp(sub *pubsub.Subscription) error {
 		}
 	}
 }
-
-/*
-	func (cli *Client) requestCatchUp(since, limit uint64) (*models.CatchUpResponse, error) {
-		if cli.Session == nil || cli.Session.Room == nil {
-			return nil, fmt.Errorf("no room joined, cannot request catch-up")
-		}
-		var resp models.CatchUpResponse
-		err := cli.Node.SendRPC("CatchUp", models.CatchUpRequest{}, &resp)
-		if err != nil {
-			return nil, err
-		}
-		if resp.Error != "" {
-			return nil, fmt.Errorf("%s", resp.Error)
-		}
-		return &resp, nil
-	}
-
-	func (cli *Client) responseCatchUp(ps *pubsub.Message, top *pubsub.Topic) error {
-		if cli.Session == nil || cli.Session.Room == nil {
-			return fmt.Errorf("no room joined, cannot process catch-up response")
-		}
-		var resp models.CatchUpResponse
-		var ct []byte
-		var kyberPub kem.PublicKey
-		rat := cli.Session.BackupRatchet
-		var reqPub []byte
-		senderID := ps.ReceivedFrom
-		env, message, err := models.UnmarshalEnvelope(ps.Data)
-		if err != nil {
-			resp.Error = fmt.Sprintf("security validation failed: %s", err)
-			goto send
-		}
-		if err := cli.validateMessageSecurity(env, senderID); err != nil {
-			resp.Error = fmt.Sprintf("security validation failed: %s", err)
-			goto send
-		}
-		if message.Type() != models.MsgTypeCatchUpResp {
-			resp.Error = fmt.Sprintf("expected CatchUpResponse, got %s", message.Type())
-			goto send
-		}
-		reqPub = env.Sender.KyberPub
-		kyberPub, err = kyber1024.Scheme().UnmarshalBinaryPublicKey(reqPub)
-		if err != nil {
-			resp.Error = fmt.Sprintf("failed to unmarshal kyber public key: %s", err)
-			goto send
-		}
-		ct, _, err = kyber1024.Scheme().EncapsulateDeterministically(kyberPub, rat.ChainKey)
-		if err != nil {
-			resp.Error = fmt.Sprintf("failed to encapsulate key: %s", err)
-			goto send
-		}
-		resp.EncState = ct
-		resp.ChainIndex = rat.Index
-
-send:
-
-		priv, ok := cli.Keybag.DilithiumPriv.(*mode2.PrivateKey)
-		if !ok {
-			return fmt.Errorf("invalid type for DilithiumPriv, expected *mode2.PrivateKey")
-		}
-		data, marshalErr := models.Marshal(resp, *cli.User, priv)
-		if marshalErr != nil {
-			return marshalErr
-		}
-		err = top.Publish(cli.Node.Ctx, data)
-		if err != nil {
-			return fmt.Errorf("failed to publish catch-up response: %s", err)
-		}
-		top.Close()
-
-		return nil
-	}
-
-	func (t *Topics) PublishToRoom(ctx context.Context, topicName string, data []byte) error {
-		topic, err := t.Pubsub.Join(topicName)
-		if err != nil {
-			return err
-		}
-		return topic.Publish(ctx, data)
-	}
-*/

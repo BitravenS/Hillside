@@ -1,6 +1,8 @@
 package client
 
 import (
+	"context"
+
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
 	"hillside/internal/crypto"
@@ -12,7 +14,13 @@ import (
 // NewTopicCollection creates a new empty topic collection
 func NewTopicCollection() *TopicCollection {
 	return &TopicCollection{
-		topics: make(map[string]*pubsub.Topic),
+		topics: make(map[models.TopicName]*pubsub.Topic),
+	}
+}
+
+func NewContexts() *Contexts {
+	return &Contexts{
+		ChatCtx: NewCtxWithCancel(context.TODO()),
 	}
 }
 
@@ -28,28 +36,28 @@ func NewRoomSession() *RoomSession {
 	}
 }
 
-func (tc *TopicCollection) GetTopic(name string) *pubsub.Topic {
+func (tc *TopicCollection) GetTopic(name models.TopicName) *pubsub.Topic {
 	return tc.topics[name]
 }
 
 // SetTopic adds or replaces a topic
-func (tc *TopicCollection) SetTopic(name string, topic *pubsub.Topic) {
+func (tc *TopicCollection) SetTopic(name models.TopicName, topic *pubsub.Topic) {
 	tc.topics[name] = topic
 }
 
 // HasTopic checks if a topic exists
-func (tc *TopicCollection) HasTopic(name string) bool {
+func (tc *TopicCollection) HasTopic(name models.TopicName) bool {
 	_, exists := tc.topics[name]
 	return exists
 }
 
 // RemoveTopic removes a topic if it exists
-func (tc *TopicCollection) RemoveTopic(name string) {
+func (tc *TopicCollection) RemoveTopic(name models.TopicName) {
 	delete(tc.topics, name)
 }
 
 // GetTopics returns all topics
-func (tc *TopicCollection) GetTopics() map[string]*pubsub.Topic {
+func (tc *TopicCollection) GetTopics() map[models.TopicName]*pubsub.Topic {
 	return tc.topics
 }
 
@@ -90,10 +98,15 @@ func NewSession(db *storage.SessionDB, logger *utils.RemoteLogger) *Session {
 		Current:   NewCurrent(),
 		SessionDB: db,
 		Log:       logger,
+		Contexts:  *NewContexts(),
 	}
 }
 
 func (rs *RoomSession) SetInitialRatchet(ratchet *crypto.RoomRatchet) {
 	rs.RoomRatchet = ratchet
 	rs.BackupRatchet = ratchet.Clone()
+}
+
+func CreateCtxWithCancel(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithCancel(ctx)
 }

@@ -140,6 +140,9 @@ SELECT peer_id, dilithium_pub, kyber_pub, libp2p_pub, username, color, last_seen
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if out == nil {
+		return nil, ErrNoRows
+	}
 	return out, nil
 }
 

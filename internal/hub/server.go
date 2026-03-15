@@ -79,22 +79,9 @@ func NewHubServer(ctx context.Context, listenAddr string) (*HubServer, error) {
 		topicCache: make(map[string]*pubsub.Topic),
 	}
 
-	/*
-		// Set connection notification handlers
-		h.Network().Notify(&network.NotifyBundle{
-			ConnectedF: func(n network.Network, c network.Conn) {
-				log.Printf("[HUB] CONNECT: Peer %s connected from %s",
-					c.RemotePeer().String(), c.RemoteMultiaddr().String())
-			},
-			DisconnectedF: func(n network.Network, c network.Conn) {
-				log.Printf("[HUB] DISCONNECT: Peer %s disconnected",
-					c.RemotePeer().String())
-			},
-		})
-	*/
-
 	h.SetStreamHandler(HubProtocolID, srv.handleRPC)
 	log.Printf("[HUB] Stream handler set for protocol: %s", HubProtocolID)
+	srv.StartConnectionMonitor(1 * time.Minute)
 
 	return srv, nil
 }
@@ -144,7 +131,7 @@ func (s *HubServer) handleRPC(stream network.Stream) {
 
 	case "ListServers":
 		log.Printf("[HUB] RPC: ListServers called by %s", remotePeer.String())
-		serverPtrs := s.Store.ListServers()
+		serverPtrs := s.Store.ListServers(true)
 		servers := make([]models.ServerMeta, len(serverPtrs))
 		for i, serverPtr := range serverPtrs {
 			servers[i] = *serverPtr
@@ -448,7 +435,7 @@ func (s *HubServer) AdvertiseNewcomers(room *models.RoomMeta, serverID string) e
 }
 
 func (s *HubServer) AdvertiseNewServer() error {
-	serverPtrs := s.Store.ListServers()
+	serverPtrs := s.Store.ListServers(true)
 	servers := make([]models.ServerMeta, len(serverPtrs))
 	for i, serverPtr := range serverPtrs {
 		servers[i] = *serverPtr

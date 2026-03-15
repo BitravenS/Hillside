@@ -111,17 +111,17 @@ func LoadProfile(usrname string, pass string, path string) (*models.Keybag, *mod
 		return nil, nil, ErrProfileLoad.WithDetails(err.Error())
 	}
 
-	dilPrivBytes, err := crypto.OpenAEAD(prof.DilithiumPrivEnc, aead)
+	dilPrivBytes, err := crypto.OpenAEAD(prof.DilithiumPrivEnc, nil, aead)
 	if err != nil {
 		return nil, nil, ErrInvalidPassword.WithDetails(err.Error())
 	}
 
-	kemPrivBytes, err := crypto.OpenAEAD(prof.KyberPrivEnc, aead)
+	kemPrivBytes, err := crypto.OpenAEAD(prof.KyberPrivEnc, nil, aead)
 	if err != nil {
 		return nil, nil, ErrInvalidPassword.WithDetails(err.Error())
 	}
 
-	libPrivBytes, err := crypto.OpenAEAD(prof.Libp2pPrivEnc, aead)
+	libPrivBytes, err := crypto.OpenAEAD(prof.Libp2pPrivEnc, nil, aead)
 	if err != nil {
 		return nil, nil, ErrInvalidPassword.WithDetails(err.Error())
 	}

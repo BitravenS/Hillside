@@ -44,10 +44,10 @@ func main() {
 				connectedPeers := h.Host.Network().Peers()
 				log.Printf("Hub status - Connected peers: %d", len(connectedPeers))
 				/*
-				for _, peerID := range connectedPeers {
-					log.Printf("  Connected peer: %s", peerID.String())
-				}
-					*/
+					for _, peerID := range connectedPeers {
+						log.Printf("  Connected peer: %s", peerID.String())
+					}
+				*/
 			case <-ctx.Done():
 				return
 			}
@@ -63,3 +63,4 @@ func main() {
 		log.Printf("Hub server stopped gracefully")
 	}
 }
+
