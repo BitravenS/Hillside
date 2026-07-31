@@ -1,4 +1,9 @@
 # Hillside
+
+<p align="center">
+  <img src="assets/hillside.png" alt="Hillside Logo" width="400"/>
+</p>
+
 An end-to-end encrypted p2p cli chat app
 
 ## Roadmap
@@ -39,3 +44,7 @@ Lower priority, but still nice to have features to be rolled out eventually:
 - [ ] Emotes?
 - [ ] Democratic server management (vote based or smth)
 - [ ] Voice chat (thinking about it gives me a headache)
+
+## Getting started
+
+Run `start.sh` for the first time to create the config directory and move necessary files there, the run `build.sh` to compile the server and client binaries under `./bin`
